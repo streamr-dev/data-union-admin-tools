@@ -143,7 +143,7 @@ options['stream'].forEach(async (streamId) => {
             }
         }, (message, metadata) => {
             logic.addMessage(message, metadata)
-            
+
             if (resendInProgress && metadata.getTimestamp() > maxSeenTimestamp) {
                 maxSeenTimestamp = metadata.getTimestamp()
                 subProgressBar.update(maxSeenTimestamp - hoursAgo, {
@@ -174,6 +174,7 @@ options['stream'].forEach(async (streamId) => {
                 if (options['batch']) {
                     process.exit(0)
                 } else {
+                    console.log(`Listening to new messages and repeating the check every ${options['kick-interval-minutes']} minutes.`)
                     setInterval(kickMembers, options['kick-interval-minutes']*60*1000)
                 }
             }
@@ -192,18 +193,17 @@ const kickMembers = async () => {
     const currentlyActiveMembers = await streamr.getMembers(options['contract-address'])
     console.log(`Found ${currentlyActiveMembers.length} active members. Checking who to kick...`)
 
-    // Pass only the array of addresses to the logic    
+    // Pass only the array of addresses to the logic
     const membersToKick = logic.getMembersToKick(currentlyActiveMembers)
     const addressesToKick = membersToKick.map((member) => member.address)
 
     console.log(`Kicking ${membersToKick.length} members: ${JSON.stringify(addressesToKick)}`)
-    
+
     if (options['dry-run']) {
         console.log(`dry-run: Not really kicking!`)
     } else {
         // Kick the given members
-        // TODO: uncomment
-        // await streamr.kick(options['contract-address'], membersToKick.map((member) => member.address))
+        await streamr.kick(options['contract-address'], membersToKick.map((member) => member.address))
     }
 }
 
