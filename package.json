@@ -1,0 +1,30 @@
+{
+  "name": "data-union-admin-tools",
+  "version": "1.0.0",
+  "description": "Collection of CLI tools to help manage Data Unions on Streamr Marketplace",
+  "main": "none.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/streamr-dev/data-union-admin-tools.git"
+  },
+  "keywords": [
+    "streamr",
+    "data",
+    "union",
+    "admin",
+    "tools",
+    "CLI",
+    "autokick"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/streamr-dev/data-union-admin-tools#readme",
+  "dependencies": {
+    "cli-progress": "^3.6.0",
+    "console-stamp": "^0.2.9",
+    "streamr-client": "^3.1.1",
+    "yargs": "^15.1.0"
+  }
+}
