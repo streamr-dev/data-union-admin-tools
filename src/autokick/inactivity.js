@@ -5,8 +5,8 @@ module.exports = class InactivityKickLogic {
 		this.lastDataTimestampByMember = {}
 	}
 
-	addMessage(message, metadata) {
-		this.lastDataTimestampByMember[metadata.getPublisherId()] = metadata.getTimestamp()
+	addMessage(payload, streamrMessage) {
+		this.lastDataTimestampByMember[streamrMessage.getPublisherId()] = streamrMessage.getTimestamp()
 	}
 
 	getMembersToKick(currentlyActiveMembers) {
@@ -18,7 +18,7 @@ module.exports = class InactivityKickLogic {
 				delete this.lastDataTimestampByMember[address]
 			}
 		})
-		
+
 		console.log(`InactivityKickLogic: seen messages from ${Object.keys(this.lastDataTimestampByMember).length} members in the past ${this.options['window-hours']} hours.`)
 
 		// Return active members NOT on the lastDataTimestampByMember set

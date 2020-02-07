@@ -74,7 +74,9 @@ const logic = new KickLogic(options)
 /**
  * Streamr connection setup
  */
-const clientConfig = {}
+const clientConfig = {
+    orderMessages: options['order-messages'],
+}
 
 if (options['streamr-url']) {
     clientConfig.url = options['streamr-url']
@@ -82,9 +84,9 @@ if (options['streamr-url']) {
 if (options['streamr-rest-url']) {
     clientConfig.restUrl = options['streamr-rest-url']
 }
-if (options['order-messages']) {
-    clientConfig.orderMessages = options['order-messages']
-}
+
+// Log the config before setting the secrets
+console.log('Streamr client config: ', clientConfig)
 
 if (options['api-key']) {
     clientConfig.auth = {
@@ -98,6 +100,8 @@ if (options['api-key']) {
     console.error('You must give either the --api-key or --private-key option, or use --dry-run!')
     process.exit(1)
 }
+
+
 
 // Create client
 const streamr = new StreamrClient(clientConfig)
@@ -113,6 +117,7 @@ const resendingSubs = []
 const multibar = new CliProgress.MultiBar({
     format: ' {bar} | {stream}',
 }, CliProgress.Presets.shades_grey)
+let latestSeenMessage
 
 console.log(`Resending messages from ${options['stream'].length} streams since ${options['window-hours']} hours ago (${new Date(hoursAgo)})...`)
 
@@ -141,11 +146,12 @@ options['stream'].forEach(async (streamId) => {
                     timestamp: hoursAgo,
                 },
             }
-        }, (message, metadata) => {
-            logic.addMessage(message, metadata)
+        }, (payload, streamrMessage) => {
+            logic.addMessage(payload, streamrMessage)
+            latestSeenMessage = streamrMessage
 
-            if (resendInProgress && metadata.getTimestamp() > maxSeenTimestamp) {
-                maxSeenTimestamp = metadata.getTimestamp()
+            if (resendInProgress && streamrMessage.getTimestamp() > maxSeenTimestamp) {
+                maxSeenTimestamp = streamrMessage.getTimestamp()
                 subProgressBar.update(maxSeenTimestamp - hoursAgo, {
                     stream: streamDescriptionForProgressBar,
                 })
@@ -166,6 +172,12 @@ options['stream'].forEach(async (streamId) => {
             if (!resendingSubs.length) {
                 multibar.stop()
                 console.log('All resends complete.')
+
+                // Sanity check
+                if (!latestSeenMessage) {
+                    console.error('Sanity check failed: Initial resend contained no messages. Either there\'s no data in the stream, or something went wrong with the resend. Exiting..')
+                    process.exit(1)
+                }
 
                 // Do the members kick once now
                 await kickMembers()
@@ -188,10 +200,15 @@ const kickMembers = async () => {
         return
     }
 
+    if (Date.now() - latestSeenMessage.getTimestamp() >= options['kick-interval-minutes']*60*1000) {
+        console.log(`No new data in any of the streams since ${new Date(latestSeenMessage.getTimestamp())}! I'm not confident kicking people. Skipping this time...`)
+        return
+    }
+
     // What are the currently active members? Anyone we want to kick must be in this set
     console.log('Fecthing currently active members...')
     const currentlyActiveMembers = await streamr.getMembers(options['contract-address'])
-    console.log(`Found ${currentlyActiveMembers.length} active members. Checking who to kick...`)
+    console.log(`Found ${currentlyActiveMembers.length} active members. Checking who to kick. Latest seen message timestamp: ${new Date(latestSeenMessage.getTimestamp())}`)
 
     // Pass only the array of addresses to the logic
     const membersToKick = logic.getMembersToKick(currentlyActiveMembers)
@@ -207,3 +224,7 @@ const kickMembers = async () => {
     }
 }
 
+// Log unhandled rejection traces
+process.on('unhandledRejection', (err, p) => {
+    console.error('Unhandled Rejection at: Promise', p, 'err:', err, `stack:`, err.stack)
+})
