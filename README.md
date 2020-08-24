@@ -3,6 +3,7 @@
 This repository contains a selection of command-line tools for administering Data Unions on Streamr:
 
 * [autokick](#binautokickjs)
+* [joinserver](#binjoinserverjs)
 
 ### Installation
 
@@ -80,3 +81,36 @@ Where the arguments are:
 * `--private-key [key]`: An Ethereum private key for an address that has been granted permissions to: 
   * Read data in all the streams given with `--stream`, and
   * Write to the join/part stream of your data union (not required in `--dry-run` mode, as you're not really kicking anybody)
+
+### bin/joinserver.js
+
+A http server to validate join requests to a Data Union. This can be used to implement custom validation for join requests, such as adding a CAPTCHA.
+
+The util ships with a dummy validation logic called `hardcoded` that simply checks that the requests contain a pre-defined secret. In real life, you'll want to implement your own validation logic and pass it to the script with the `--validation-logic` option. 
+
+To get help, just run `bin/joinserver.js` without any arguments:
+
+```
+Usage: joinserver.js --private-key [privateKeyHex] ...
+
+Options:
+  --help              Show help                                        [boolean]
+  --version           Show version number                              [boolean]
+  --private-key       Ethereum private key of the Data Union admin or join agent
+                                                                      [required]
+  --ethereum-rpc      Ethereum RPC URL to use                           [string]
+  --validation-logic  Loads the desired join request validation logic from
+                      src/joinserver folder. The default 'hardcoded' logic is a
+                      dummy logic that accepts requests that supply a hard-coded
+                      secret.                    [string] [default: "hardcoded"]
+  --port              TCP port to listen on for HTTP requests
+                                                       [number] [default: 16823]
+```
+
+The script must be run with a private key for a user that has the permission to join members to the Data Union.
+
+Once the join server is running, you can try it out by doing a HTTP request:
+
+```
+curl -v -H "Content-Type: application/json" -d "{\"secret\":\"my-very-secret-password\"}" http://localhost:16823/0x103efb97b56ac6c5e697e58812a1a0eaa2529b14/0x9e3d69305Da51f34eE29BfB52721e3A824d59e69
+```

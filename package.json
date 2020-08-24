@@ -24,6 +24,8 @@
   "dependencies": {
     "cli-progress": "^3.6.0",
     "console-stamp": "^0.2.9",
+    "ethers": "^5.0.8",
+    "express": "^4.17.1",
     "streamr-client": "^3.1.2",
     "yargs": "^15.1.0"
   }
