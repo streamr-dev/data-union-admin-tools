@@ -1,15 +1,18 @@
 ## data-union-admin-tools
 
-This repository contains a selection of command-line tools for administering Data Unions on Streamr.
+This repository contains a selection of command-line tools for administering Data Unions on Streamr:
+
+* [autokick](#binautokickjs)
 
 ### Installation
 
 To use the tools, you should have node.js and `git` installed as prerequisites. 
 
-* Clone the repo with `git clone git@github.com:streamr-dev/data-union-admin-tools.git`
-* Install dependencies with `npm ci`
+* Clone the repo: `git clone git@github.com:streamr-dev/data-union-admin-tools.git`
+* `cd data-union-admin-tools`
+* Install dependencies: `npm ci`
 
-### autokick.js
+### bin/autokick.js
 
 A utility to automatically remove non-contributing members from your data union.
 
