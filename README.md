@@ -14,6 +14,8 @@ To use the tools, you should have node.js and `git` installed as prerequisites.
 
 ### bin/autokick.js
 
+**WARNING: this tool depends on large historical resends, which are currently unreliable. Do NOT run the util without the `--dry-run` flag. You have been warned!**
+
 A utility to automatically remove non-contributing members from your data union.
 
 Ships with a simple inactivity logic, which kicks users who haven't sent any data within the inspected time window. More elaborate logic can be plugged in.
