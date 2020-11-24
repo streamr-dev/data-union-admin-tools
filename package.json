@@ -4,7 +4,7 @@
   "description": "Collection of CLI tools to help manage Data Unions on Streamr Marketplace",
   "main": "none.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha"
   },
   "repository": {
     "type": "git",
@@ -22,9 +22,16 @@
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/streamr-dev/data-union-admin-tools#readme",
   "dependencies": {
+    "body-parser": "^1.19.0",
     "cli-progress": "^3.6.0",
     "console-stamp": "^0.2.9",
-    "streamr-client": "^3.1.2",
+    "ethers": "^5.0.22",
+    "express": "^4.17.1",
+    "streamr-client": "4.2.0-alpha.10",
     "yargs": "^15.1.0"
+  },
+  "devDependencies": {
+    "mocha": "^8.2.1",
+    "sinon": "^9.2.1"
   }
 }
