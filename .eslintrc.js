@@ -3,9 +3,6 @@ module.exports = {
         node: true,
         es6: true
     },
-    parserOptions: {
-        ecmaVersion: 2017
-    },
     extends: [
         'streamr-nodejs'
     ],
@@ -14,8 +11,9 @@ module.exports = {
         // TODO: add these to eslint-config-streamr
         'max-len': 'off',
         'object-curly-newline': 'off',
-        'promise/always-return': 'off',
+        'promise/always-return': 'warn',
         'no-await-in-loop': 'off',
+        'semi-style': ['warn', 'first'],
 
         // CLI tool specific
         'no-console': 'off',
