@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable no-loop-func */
+/* eslint-disable no-loop-func,import/order */
 
 const StreamrClient = require('streamr-client')
 const CliProgress = require('cli-progress')

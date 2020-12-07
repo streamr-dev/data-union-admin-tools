@@ -13,8 +13,8 @@ const DataUnionSidechain = require('./DataUnionSidechain.json')
 const config = require('./config')
 
 const PORT = 4567
-// const log = debug('Streamr:signed-withdraw-server:test')
-const { log } = console
+const log = debug('Streamr:signed-withdraw-server:test')
+// const { log } = console
 
 const providerSidechain = new providers.JsonRpcProvider(config.clientOptions.sidechain)
 const providerMainnet = new providers.JsonRpcProvider(config.clientOptions.mainnet)
