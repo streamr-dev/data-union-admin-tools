@@ -1,0 +1,51 @@
+name: Lint & test
+
+on:
+  push:
+    tags:
+      - '*'
+    branches:
+      - master
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  lint:
+    name: Run linter using Node 14
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+
+      - name: npm ci
+        run: npm ci
+
+      - name: npm run lint
+        run: npm run lint
+
+  test:
+    name: Integration test using Node 14
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14
+
+      - name: npm ci
+        run: npm ci
+
+      - name: setup streamr-docker-dev
+        run: |
+          sudo service mysql stop
+          git clone https://github.com/streamr-dev/streamr-docker-dev.git
+          sudo ifconfig docker0 10.200.10.1/24
+          ${GITHUB_WORKSPACE}/streamr-docker-dev/streamr-docker-dev/bin.sh start --wait --except data-union-server --except bridge_collected
+
+      - name: npm run test
+        run: npm run test

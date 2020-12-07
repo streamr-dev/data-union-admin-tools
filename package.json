@@ -4,7 +4,8 @@
   "description": "Collection of CLI tools to help manage Data Unions on Streamr Marketplace",
   "main": "none.js",
   "scripts": {
-    "test": "mocha"
+    "test": "mocha",
+    "lint": "eslint ."
   },
   "repository": {
     "type": "git",
