@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-/* eslint-disable no-loop-func,import/order */
-
 const StreamrClient = require('streamr-client')
 const CliProgress = require('cli-progress')
+
 require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
 const options = require('yargs')
@@ -17,7 +16,7 @@ const options = require('yargs')
         default: undefined
     })
 
-// TODO: how to set the ethereum network to use?
+    // TODO: how to set the ethereum network to use?
 
     .option('window-hours', {
         type: 'number',
@@ -65,11 +64,10 @@ const options = require('yargs')
         default: false,
         describe: 'If this option is given, the script doesn\'t really kick members from the data union, but instead logs kicks to the console.',
     })
-    .demandOption(['stream', 'contract-address'])
-    .argv
+    .demandOption(['stream','contract-address'])
+    .argv;
 
 // Load the specified kick logic
-// eslint-disable-next-line import/no-dynamic-require
 const KickLogic = require('../src/autokick/' + options['kick-logic'])
 const logic = new KickLogic(options)
 
@@ -103,6 +101,8 @@ if (options['api-key']) {
     process.exit(1)
 }
 
+
+
 // Create client
 const streamr = new StreamrClient(clientConfig)
 streamr.on('error', (err) => {
@@ -111,52 +111,22 @@ streamr.on('error', (err) => {
 
 // Subscribe to given content streams from given timestamp
 const now = Date.now()
-const hoursAgo = now - options['window-hours'] * 60 * 60 * 1000
-// const subs = [] // TODO: maybe this was meant for cleanup afterwards?
+const hoursAgo = now - options['window-hours']*60*60*1000
+const subs = []
 const resendingSubs = []
 const multibar = new CliProgress.MultiBar({
     format: ' {bar} | {stream}',
 }, CliProgress.Presets.shades_grey)
 let latestSeenMessage
 
-async function kickMembers() {
-    // Check that no subscription is resending anymore
-    if (resendingSubs.length) {
-        return
-    }
+console.log(`Resending messages from ${options['stream'].length} streams since ${options['window-hours']} hours ago (${new Date(hoursAgo)})...`)
 
-    if (Date.now() - latestSeenMessage.getTimestamp() >= options['kick-interval-minutes'] * 60 * 1000) {
-        console.log(`No new data in any of the streams since ${new Date(latestSeenMessage.getTimestamp())}! I'm not confident kicking people. Skipping this time...`)
-        return
-    }
-
-    // What are the currently active members? Anyone we want to kick must be in this set
-    console.log('Fetching currently active members...')
-    const currentlyActiveMembers = await streamr.getMembers(options['contract-address'])
-    console.log(`Found ${currentlyActiveMembers.length} active members. Checking who to kick. Latest seen message timestamp: ${new Date(latestSeenMessage.getTimestamp())}`)
-
-    // Pass only the array of addresses to the logic
-    const membersToKick = logic.getMembersToKick(currentlyActiveMembers)
-    const addressesToKick = membersToKick.map((member) => member.address)
-
-    console.log(`Kicking ${membersToKick.length} members: ${JSON.stringify(addressesToKick)}`)
-
-    if (options['dry-run']) {
-        console.log('dry-run: Not really kicking!')
-    } else {
-        // Kick the given members
-        await streamr.kick(options['contract-address'], membersToKick.map((member) => member.address))
-    }
-}
-
-console.log(`Resending messages from ${options.stream.length} streams since ${options['window-hours']} hours ago (${new Date(hoursAgo)})...`)
-
-options.stream.forEach(async (streamId) => {
+options['stream'].forEach(async (streamId) => {
     // Fetch the stream metadata to learn the stream name and number of partitions
     const stream = await streamr.getStream(streamId)
 
     // Get messages from all partitions and forward them to the kick logic
-    for (let partition = 0; partition < stream.partitions; partition++) {
+    for (let partition=0; partition < stream.partitions; partition++) {
         let resendInProgress = true
 
         // Progressbar values run from 0 to (now - hoursAgo)
@@ -167,7 +137,7 @@ options.stream.forEach(async (streamId) => {
             stream: streamDescriptionForProgressBar,
         })
 
-        const methodName = options.batch ? 'resend' : 'subscribe'
+        const methodName = options['batch'] ? 'resend' : 'subscribe'
         const sub = await streamr[methodName]({
             stream: stream.id,
             partition,
@@ -213,18 +183,48 @@ options.stream.forEach(async (streamId) => {
                 await kickMembers()
 
                 // Then schedule it to happen at intervals
-                if (options.batch) {
+                if (options['batch']) {
                     process.exit(0)
                 } else {
                     console.log(`Listening to new messages and repeating the check every ${options['kick-interval-minutes']} minutes.`)
-                    setInterval(kickMembers, options['kick-interval-minutes'] * 60 * 1000)
+                    setInterval(kickMembers, options['kick-interval-minutes']*60*1000)
                 }
             }
         })
     }
 })
 
+const kickMembers = async () => {
+    // Check that no subscription is resending anymore
+    if (resendingSubs.length) {
+        return
+    }
+
+    if (Date.now() - latestSeenMessage.getTimestamp() >= options['kick-interval-minutes']*60*1000) {
+        console.log(`No new data in any of the streams since ${new Date(latestSeenMessage.getTimestamp())}! I'm not confident kicking people. Skipping this time...`)
+        return
+    }
+
+    // What are the currently active members? Anyone we want to kick must be in this set
+    console.log('Fecthing currently active members...')
+    const currentlyActiveMembers = await streamr.getMembers(options['contract-address'])
+    console.log(`Found ${currentlyActiveMembers.length} active members. Checking who to kick. Latest seen message timestamp: ${new Date(latestSeenMessage.getTimestamp())}`)
+
+    // Pass only the array of addresses to the logic
+    const membersToKick = logic.getMembersToKick(currentlyActiveMembers)
+    const addressesToKick = membersToKick.map((member) => member.address)
+
+    console.log(`Kicking ${membersToKick.length} members: ${JSON.stringify(addressesToKick)}`)
+
+    if (options['dry-run']) {
+        console.log(`dry-run: Not really kicking!`)
+    } else {
+        // Kick the given members
+        await streamr.kick(options['contract-address'], membersToKick.map((member) => member.address))
+    }
+}
+
 // Log unhandled rejection traces
 process.on('unhandledRejection', (err, p) => {
-    console.error('Unhandled Rejection at: Promise', p, 'err:', err, 'stack:', err.stack)
+    console.error('Unhandled Rejection at: Promise', p, 'err:', err, `stack:`, err.stack)
 })
