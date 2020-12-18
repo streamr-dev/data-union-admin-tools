@@ -3,6 +3,7 @@
 This repository contains a selection of command-line tools for administering Data Unions on Streamr:
 
 * [autokick](#binautokickjs)
+* [signed withdraw server](#signed-withdraw-server)
 
 ### Installation
 
@@ -80,3 +81,32 @@ Where the arguments are:
 * `--private-key [key]`: An Ethereum private key for an address that has been granted permissions to: 
   * Read data in all the streams given with `--stream`, and
   * Write to the join/part stream of your data union (not required in `--dry-run` mode, as you're not really kicking anybody)
+
+### Signed withdraw server
+
+Opens a HTTP port and executes the signed withdrawals from given data unions. This way the data union member doesn't need to pay for the gas when the withdrawn tokens are transported to mainnet over the Asyncronous Message-passing Bridge (AMB).
+
+The data union member only signs a permission to withdraw their tokens into a given (maybe 3rd party) address. The signature is created using StreamrClient:
+```javascript
+const client = new StreamrClient({
+    auth: { privateKey },
+    dataUnion,
+})
+const signature = await client.signWithdrawTo(recipientAddress)
+```
+
+Pass arguments as environment variables:
+
+```$xslt
+Usage: SERVER_PRIVATE_KEY=0x1234... DATA_UNION_ADDRESS=0x1234... bin/start-signed-withdraw-server.js
+
+SERVER_PRIVATE_KEY is the Ethereum key that will be used for paying the transaction fees
+                   so the account must have ETH in it
+
+DATA_UNION_ADDRESS is the Ethereum address or comma-separated list of Ethereum addresses,
+                   of the data union whose withdraws are handled by this server (default: handle all)
+
+PORT is where the HTTP server listens for incoming connections (default: 3000)
+
+ETHEREUM_URL is the Ethereum (mainnet) node used for sending the transactions (default: ethers.js)
+```
