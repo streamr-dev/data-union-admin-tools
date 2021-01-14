@@ -36,4 +36,5 @@ jobs:
 
       - name: Run integration tests
         run: npm run test
-        env: DEBUG=Streamr*
+        env:
+          DEBUG=Streamr*
