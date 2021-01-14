@@ -1,4 +1,4 @@
-name: Lint & test
+name: Integration tests
 
 on:
   push:
@@ -11,8 +11,8 @@ on:
       - '*'
 
 jobs:
-  lint:
-    name: Run linter using Node 14
+  test:
+    name: Integration tests
     runs-on: ubuntu-latest
 
     steps:
@@ -21,31 +21,19 @@ jobs:
         with:
           node-version: 14
 
-      - name: npm ci
+      - name: Setup dependencies
         run: npm ci
 
-      - name: npm run lint
+      - name: Lint
         run: npm run lint
 
-  test:
-    name: Integration test using Node 14
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions/setup-node@v1
-        with:
-          node-version: 14
-
-      - name: npm ci
-        run: npm ci
-
-      - name: setup streamr-docker-dev
+      - name: Setup streamr-docker-dev environment
         run: |
           sudo service mysql stop
           git clone https://github.com/streamr-dev/streamr-docker-dev.git
           sudo ifconfig docker0 10.200.10.1/24
-          ${GITHUB_WORKSPACE}/streamr-docker-dev/streamr-docker-dev/bin.sh start --wait --except data-union-server --except bridge_collected
+          ${GITHUB_WORKSPACE}/streamr-docker-dev/streamr-docker-dev/bin.sh start --wait --except data-union-server
 
-      - name: npm run test
+      - name: Run integration tests
         run: npm run test
+        env: DEBUG=Streamr*
