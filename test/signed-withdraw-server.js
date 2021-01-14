@@ -129,7 +129,7 @@ it('Signed withdraw server successfully withdraws earnings', async function () {
 
     // make a "full" sidechain contract object that has all functions, not just those required by StreamrClient
     const sidechainContract = new Contract(dataUnion.sidechain.address, DataUnionSidechain.abi, adminWalletSidechain)
-    const tx3 = await sidechainContract.addRevenue()
+    const tx3 = await sidechainContract.refreshRevenue()
     const tr3 = await tx3.wait()
     log(`addRevenue returned ${JSON.stringify(tr3)}`)
     log(`DU balance: ${await dataUnion.sidechain.totalEarnings()}`)
@@ -184,4 +184,5 @@ it('Signed withdraw server successfully withdraws earnings', async function () {
     assert.strictEqual(stats.withdrawableEarnings, '1000000000000000000')
     assert.strictEqual(balanceIncrease.toString(), amount.toString())
     assert.strictEqual(isValid, true)
+    assert.strictEqual(resp.error, undefined)
 })
