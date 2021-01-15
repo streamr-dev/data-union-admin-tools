@@ -156,6 +156,7 @@ it.skip('Signed withdraw server successfully withdraws earnings', async function
         dataUnionAddress: dataUnion.address,
         memberAddress: memberWallet.address,
         recipientAddress: member2Wallet.address,
+        tokenAddress,
         signature,
     })
     log(`curl -X POST -H "Content-Type: application/json" -d '${body}' ${serverUrl}`)

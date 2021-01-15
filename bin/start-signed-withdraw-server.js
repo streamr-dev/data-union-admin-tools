@@ -51,6 +51,7 @@ app.post('/', (req, res) => {
         memberAddress,
         recipientAddress,
         signature,
+        tokenAddress,
     } = req.body
 
     console.log(`Received request ${memberAddress} -> ${recipientAddress} signature ${signature}`)
@@ -81,11 +82,14 @@ app.post('/', (req, res) => {
         return
     }
 
-    const ethersOptions = {}
+    const ethersOptions = {
+        tokenAddress
+    }
     if (GAS_PRICE_GWEI) { ethersOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
 
     const streamrOptions = {
         auth: { privateKey: SERVER_PRIVATE_KEY },
+        tokenAddress,
         dataUnion,
     }
     if (ETHEREUM_URL) { streamrOptions.mainnet = { url: ETHEREUM_URL } }
