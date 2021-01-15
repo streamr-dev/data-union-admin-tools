@@ -54,7 +54,7 @@ afterEach(() => {
 })
 
 // eslint-disable-next-line prefer-arrow-callback, func-names
-it('Signed withdraw server successfully withdraws earnings', async function () {
+it.skip('Signed withdraw server successfully withdraws earnings', async function () {
     this.timeout(300000)
 
     log(`Connecting to Ethereum networks, config = ${JSON.stringify(config)}`)
