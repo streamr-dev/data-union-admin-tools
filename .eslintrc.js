@@ -14,6 +14,8 @@ module.exports = {
         'promise/always-return': 'warn',
         'no-await-in-loop': 'off',
         'semi-style': ['warn', 'first'],
+        'no-restricted-syntax': 'off',
+        'no-continue': 'off',
 
         // CLI tool specific
         'no-console': 'off',
