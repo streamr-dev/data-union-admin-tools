@@ -86,7 +86,7 @@ debug('Command-line options', options)
 debug('StreamrClient options', streamrOpts)
 
 const provider = options.ethereumUrl ? new JsonRpcProvider(options.ethereumUrl) : getDefaultProvider()
-const sidechainProvider = options.sidechainUrl ? new JsonRpcProvider(options.ethereumUrl) : new StreamrClient().getSidechainProvider()
+const sidechainProvider = options.sidechainUrl ? new JsonRpcProvider(options.sidechainUrl) : new StreamrClient().getSidechainProvider()
 if (!sidechainProvider) {
     throw new Error('Must provide --sidechainUrl')
 }
