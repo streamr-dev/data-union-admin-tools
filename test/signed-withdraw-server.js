@@ -7,9 +7,9 @@ const StreamrClient = require('streamr-client')
 const fetch = require('node-fetch')
 
 const { until, untilStreamMatches } = require('../src/utils')
-
 const Token = require('../contracts/IERC20.json')
 const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
+
 const config = require('./config')
 
 const PORT = 4567

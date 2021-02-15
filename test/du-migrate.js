@@ -125,7 +125,7 @@ it('Runs a dry-run without error', async () => {
 })
 */
 
-it('Migrates an old DU to a new DU', async function () {
+it('Migrates an old DU to a new DU', async function test() {
     this.timeout(600000)
 
     log(`Connecting to Ethereum networks, config = ${JSON.stringify(config)}`)

@@ -1,13 +1,5 @@
 #!/usr/bin/env node
 
-const DataunionVault = require('../contracts/DataunionVault.json')
-const DataUnionMainnet = require('../contracts/DataUnionMainnet.json')
-const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
-const Token = require('../contracts/ERC20Detailed.json')
-const TokenMediator = require('../contracts/ITokenMediator.json')
-
-const debug = require('debug')('Streamr:DU:migrate')
-
 const StreamrClient = require('streamr-client')
 const {
     utils: { getAddress, formatEther },
@@ -17,10 +9,18 @@ const {
     BigNumber,
     Wallet,
 } = require('ethers')
-const { streamrFetch, until } = require('../src/utils')
+const yargs = require('yargs')
+const debug = require('debug')('Streamr:DU:migrate')
 const CliProgress = require('cli-progress')
-require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
+const DataunionVault = require('../contracts/DataunionVault.json')
+const DataUnionMainnet = require('../contracts/DataUnionMainnet.json')
+const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
+const Token = require('../contracts/ERC20Detailed.json')
+const TokenMediator = require('../contracts/ITokenMediator.json')
+const { streamrFetch, until } = require('../src/utils')
+
+require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
 /**
  * @typedef {Object} Options
@@ -34,8 +34,7 @@ require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
  * @property {String} sidechainUrl
  * @property {Boolean} dryRun
  */
-const options = require('yargs')
-    .usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...')
+const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...')
     .option('old', {
         type: 'string',
         describe: 'The address of the old data union smart contract to migrate from',
