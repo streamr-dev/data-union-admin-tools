@@ -7,37 +7,32 @@ const {
     providers,
     Wallet,
     BigNumber,
-    utils: { formatEther, parseEther }
+    utils: { formatEther, parseEther, computeAddress }
 } = require('ethers')
 const debug = require('debug')
 const StreamrClient = require('streamr-client')
-const fetch = require('node-fetch')
 
 const {
     until,
     untilStreamContains,
     throwIfBadAddress,
     throwIfNotContract,
-    httpGet,
-    sleep,
+    streamrFetch,
 } = require('../src/utils')
 const Token = require('../contracts/TestToken.json')
-const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
 const DataunionVault = require('../contracts/DataunionVault.json')
 
 const config = require('./config')
 
-const PORT = 4567
 const log = debug('Streamr:signed-withdraw-server:test')
 // const { log } = console
 
-const providerSidechain = new providers.JsonRpcProvider(config.clientOptions.sidechain)
 const providerMainnet = new providers.JsonRpcProvider(config.clientOptions.mainnet)
 const adminWalletMainnet = new Wallet(config.clientOptions.auth.privateKey, providerMainnet)
-const adminWalletSidechain = new Wallet(config.clientOptions.auth.privateKey, providerSidechain)
-
+const adminTokenMainnet = new Contract(config.clientOptions.tokenAddress, Token.abi, adminWalletMainnet)
 const tokenAdminWallet = new Wallet(config.tokenAdminPrivateKey, providerMainnet)
-const tokenMainnet = new Contract(config.clientOptions.tokenAddress, Token.abi, tokenAdminWallet)
+
+const providerSidechain = new providers.JsonRpcProvider(config.clientOptions.sidechain)
 
 /**
  * Deploy a new DataUnion contract and create the required joinPartStream
@@ -45,15 +40,15 @@ const tokenMainnet = new Contract(config.clientOptions.tokenAddress, Token.abi, 
  * @param {EthereumOptions} options such as blockFreezePeriodSeconds (default: 0), adminFee (default: 0)
  * @return {Promise<Contract>} has methods that can be awaited: contract is deployed (`.deployed()`), operator is started (`.isReady()`)
  */
-async function deployOldDataUnion(client, options) {
+async function deployOldDataUnion(client, options = {}) {
     const {
         blockFreezePeriodSeconds = 0,
         adminFee = 0,
         tokenAddress = client.options.tokenAddress,
         streamrNodeAddress = client.options.streamrNodeAddress,
-        streamrOperatorAddress = client.options.streamrOperatorAddress,
-        retryTimeoutMs = 10000,
-        pollingIntervalMs = 100,
+        streamrOperatorAddress = config.streamrOperatorAddress,
+        retryTimeoutMs = 60000,
+        pollingIntervalMs = 5000,
     } = options
     const wallet = new Wallet(client.options.auth.privateKey, providerMainnet)
 
@@ -84,81 +79,72 @@ async function deployOldDataUnion(client, options) {
     const { address } = result // this can be known in advance
     log(`Data Union contract @ ${address} deployment started`)
 
-    let stats
-    const error = await until(async () => {
-        stats = await httpGet(this, address, '/stats')
-        return !!stats.dataUnion
-    }, retryTimeoutMs, pollingIntervalMs).catch((e) => e) // return error if caught
+    let stats = { error: 'http GET not performed for some reason' }
+    await until(async () => {
+        stats = await streamrFetch(client, `/dataunions/${address}/stats`).catch(error => ({ error }))
+        return !!stats.totalEarnings
+    }, retryTimeoutMs, pollingIntervalMs)
     if (stats.error) {
-        throw new Error(`Data Union failed to start, retried for ${retryTimeoutMs} ms. Status: ${JSON.stringify(stats)}. ${error || ''}`)
+        throw new Error(`Data Union failed to start, retried for ${retryTimeoutMs} ms. Status: ${JSON.stringify(stats)}`)
     }
 
     return result
 }
 
+/*
+it('Runs a dry-run without error', async () => {
+    const timeBeforeMs = Date.now()
+    const env = {
+        DEBUG: 'Streamr*'
+    }
+    const cmdLine = ['bin/du-migrate.js',
+        '--old', '0x1F9F5Ebe4629b5BEbA6Edd94c83B4aa000C877Ed',
+        '--key', config.clientOptions.auth.privateKey,
+        '--factory-address', config.clientOptions.factoryMainnetAddress,
+        '--streamr-ws', config.clientOptions.url,
+        '--streamr-url', config.clientOptions.restUrl,
+        '--ethereum-url', config.clientOptions.mainnet.url,
+        '--sidechain-url', config.clientOptions.sidechain.url,
+        // '--dry-run'
+        '--new', '0x336AEEb386B303741AF418806d04b260922bd2EE',
+    ]
+    log(Object.keys(env).map(k => k + '=' + env[k] + ' ').join('') + cmdLine.join(' '))
+
+    const scriptProcess = spawn(process.execPath, cmdLine, { env })
+    scriptProcess.stdout.on('data', data => { log(`(server stdout) ${data.toString().trim()}`) })
+    scriptProcess.stderr.on('data', data => { log(`(server stderr) ${data.toString().trim()}`) })
+    scriptProcess.on('close', code => { log(`server exited with code ${code}`) })
+    scriptProcess.on('error', err => { log(`server ERROR: ${err}`) })
+
+    // debug library logs into stderr
+    await untilStreamContains(scriptProcess.stderr, '[DONE]')
+    scriptProcess.kill()
+
+    const timeMs = Date.now() - timeBeforeMs
+    log('Script took', timeMs, 'ms')
+})
+*/
+
 it('Migrates an old DU to a new DU', async function () {
-    this.timeout(300000)
+    this.timeout(600000)
 
     log(`Connecting to Ethereum networks, config = ${JSON.stringify(config)}`)
     const network = await providerMainnet.getNetwork()
     log('Connected to "mainnet" network: ', JSON.stringify(network))
     const network2 = await providerSidechain.getNetwork()
     log('Connected to sidechain network: ', JSON.stringify(network2))
-
-    log(`Minting 100 tokens to ${adminWalletMainnet.address}`)
-    const tx1 = await tokenMainnet.mint(adminWalletMainnet.address, parseEther('100'))
-    await tx1.wait()
-
+    log('Connecting to Streamr, options:', config.clientOptions)
     const adminClient = new StreamrClient(config.clientOptions)
     await adminClient.ensureConnected()
+    log('Connected, session token', await adminClient.session.getSessionToken())
 
-    log('Get Streamr session token')
-    const sessionToken = await adminClient.session.getSessionToken()
-    log('Session token: ' + sessionToken)
-    assert(sessionToken, 'Opening session failed!')
+    log(`Minting 100 tokens to ${adminWalletMainnet.address}`)
+    const tokenAdminTokenMainnet = new Contract(adminTokenMainnet.address, Token.abi, tokenAdminWallet)
+    const tx1 = await tokenAdminTokenMainnet.mint(adminWalletMainnet.address, parseEther('100'))
+    await tx1.wait()
 
-    // wrap fetch; with the Authorization header the noise is just too much...
-    async function GET(url) {
-        const resp = await fetch(config.clientOptions.restUrl + url, {
-            headers: {
-                Authorization: `Bearer ${sessionToken}`
-            }
-        })
-        return resp.json()
-    }
-    async function POST(url, bodyObject, sessionTokenOverride, methodOverride) {
-        const resp = await fetch(config.clientOptions.restUrl + url, {
-            method: methodOverride || 'POST',
-            body: JSON.stringify(bodyObject),
-            headers: {
-                Authorization: `Bearer ${sessionTokenOverride || sessionToken}`,
-                'Content-Type': 'application/json',
-            }
-        })
-        return resp.json()
-    }
-    async function PUT(url, bodyObject) {
-        return POST(url, bodyObject, null, 'PUT')
-    }
-
-    log('1) Create a new Data Union')
-
-    log('1.1) Deploy contract and create joinPartStream')
-    const oldDataUnion = deployOldDataUnion({
-        wallet: adminWalletMainnet,
-        tokenAddress: tokenMainnet.address,
-    })
-
-    log(`1.2) Wait until Operator starts t=${Date.now()}`)
-    let stats = { error: true }
-    const statsTimeout = setTimeout(() => { throw new Error('Response from E&E: ' + JSON.stringify(stats)) }, 100000)
-    let sleepTime = 100
-    while (stats.error) {
-        await sleep(sleepTime *= 2)
-        stats = await GET(`/dataunions/${oldDataUnion.address}/stats`).catch(() => ({ error: true }))
-        log(`     Response t=${Date.now()}: ${JSON.stringify(stats)}`)
-    }
-    clearTimeout(statsTimeout)
+    log('1) Deploy contract and create joinPartStream')
+    const oldDataUnion = await deployOldDataUnion(adminClient)
 
     log('2) Set up Data Union in Marketplace and EE')
     log("2.2) create a stream that's going to go into the product")
@@ -172,7 +158,10 @@ it('Migrates an old DU to a new DU', async function () {
             }]
         }
     }
-    const streamCreateResponse = await POST('/streams', stream)
+    const streamCreateResponse = await streamrFetch(adminClient, '/streams', {
+        method: 'POST',
+        body: JSON.stringify(stream),
+    }).catch(error => ({ error }))
     log(`     Response: ${JSON.stringify(streamCreateResponse)}`)
     const streamId = streamCreateResponse.id
     assert(streamId, 'Creating stream failed!')
@@ -193,7 +182,10 @@ it('Migrates an old DU to a new DU', async function () {
         minimumSubscriptionInSeconds: 0,
         type: 'DATAUNION',
     }
-    const productCreateResponse = await POST('/products', product)
+    const productCreateResponse = await streamrFetch(adminClient, '/products', {
+        method: 'POST',
+        body: JSON.stringify(product),
+    }).catch(error => ({ error }))
     log(`     Response: ${JSON.stringify(productCreateResponse)}`)
     const productId = productCreateResponse.id
     assert(productId, 'Creating product failed!')
@@ -210,98 +202,119 @@ it('Migrates an old DU to a new DU', async function () {
         '0x1110000000000000000000000000000000000000000000000000000000000008',
         '0x1110000000000000000000000000000000000000000000000000000000000009',
     ]
+    const memberClients = memberKeys.map(privateKey => new StreamrClient({
+        ...config.clientOptions,
+        auth: { privateKey },
+    }))
 
     log('3.1) Add data union secret')
-    const secretCreateResponse = await POST(`/dataunions/${oldDataUnion.address}/secrets`, {
-        name: "PLEASE DELETE ME, I'm a data union Product server test secret",
-    })
+    const secretCreateResponse = await streamrFetch(adminClient, `/dataunions/${oldDataUnion.address}/secrets`, {
+        method: 'POST',
+        body: JSON.stringify({
+            name: "PLEASE DELETE ME, I'm a data union Product server test secret",
+        }),
+    }).catch(error => ({ error }))
     log(`     Response: ${JSON.stringify(secretCreateResponse)}`)
     const { secret } = secretCreateResponse
-    if (secret) { throw new Error('Setting data union secret failed!') }
+    if (!secret) { throw new Error('Setting data union secret failed!') }
 
+    // for-loop works better here because we want sequential execution, not Promise.all style parallel
     log('3.2) Send JoinRequests and revenue')
     for (let i = 0; i < memberKeys.length; i++) {
-        const key = memberKeys[i]
-        const memberAddress = computeAddress(key)
-        const tempClient = new StreamrClient({
-            ...config.clientOptions,
-            auth: { privateKey: key },
-        })
-        const memberSessionToken = await tempClient.session.getSessionToken()
-        const joinResponse = await POST(`/dataunions/${oldDataUnion.address}/joinRequests`, {
-            memberAddress,
-            secret,
-            metadata: { test: "PLEASE DELETE ME, I'm a data union Product server test joinRequest" },
-        }, memberSessionToken)
+        const memberClient = memberClients[i]
+        const memberAddress = memberClient.getAddress()
+        const joinResponse = await streamrFetch(memberClient, `/dataunions/${oldDataUnion.address}/joinRequests`, {
+            method: 'POST',
+            body: JSON.stringify({
+                memberAddress,
+                secret,
+                metadata: { test: "PLEASE DELETE ME, I'm a data union Product server test joinRequest" },
+            }),
+        }).catch(error => ({ error }))
         log(`  Response: ${JSON.stringify(joinResponse)}`)
-        if (!joinResponse.code) { throw new Error(`Join failed: ${JSON.stringify(joinResponse)}`) }
+        if (joinResponse.error) { log(joinResponse.error.stack) }
+        if (joinResponse.state !== 'ACCEPTED') { throw new Error(`Join failed: ${JSON.stringify(joinResponse)}`) }
 
         await until(async () => {
-            const m = await GET(`/dataunions/${oldDataUnion.address}/members/${memberAddress}`)
-            log(memberAddress, m)
-            return !!m.earnings
+            const m = await streamrFetch(adminClient, `/dataunions/${oldDataUnion.address}/members/${memberAddress}`)
+            log('  Member query response', m)
+            return !!m.address
         })
-        await tempClient.ensureDisconnected()
 
-        const revenue = parseEther(`${i + 1}`)
-        const balance = await tokenMainnet.balanceOf(adminWalletMainnet.address)
-        log(`  Sending ${i + 1} tokens (remaining balance: ${formatEther(balance)}) to DataUnion contract...`)
-
-        const statsBefore = await GET(`/dataunions/${oldDataUnion.address}/stats`)
-        const transferTx = await tokenMainnet.transfer(oldDataUnion.address, parseEther(revenue))
-        await transferTx.wait()
+        const nonce = await adminWalletMainnet.getTransactionCount()
+        log('  Nonce', nonce)
+        const statsBefore = await streamrFetch(adminClient, `/dataunions/${oldDataUnion.address}/stats`)
+        const balanceBefore = await adminTokenMainnet.balanceOf(adminWalletMainnet.address)
+        log(`  Sending ${i + 1} token(s) (out of ${formatEther(balanceBefore)}) to DataUnion contract...`)
+        const transferTx = await adminTokenMainnet.transfer(oldDataUnion.address, parseEther(`${i + 1}`))
+        const transferTr = await transferTx.wait(1)
+        log('  Transaction with events:', transferTr.events.map(e => `${e.event}(${e.args})`).join(', '))
 
         await until(async () => {
-            const statsAfter = await GET(`/dataunions/${oldDataUnion.address}/stats`)
-            log('  Stats after transfer', statsAfter)
-            return statsAfter.totalEarnings !== statsBefore.totalEarnings
-        })
+            const stats = await streamrFetch(adminClient, `/dataunions/${oldDataUnion.address}/stats`).catch(error => ({ error }))
+            return stats.totalEarnings !== statsBefore.totalEarnings
+        }, 30000, 3000)
     }
 
-    const members = await GET(`/dataunions/${oldDataUnion.address}/members`)
-    log(members)
-    console.log(JSON.stringify(members))
-    assert.deepStrictEqual(members, [
-        {}
+    const oldMemberList = await streamrFetch(adminClient, `/dataunions/${oldDataUnion.address}/members`)
+    log(oldMemberList)
+    assert.deepStrictEqual(oldMemberList, [
+        {
+            active: true,
+            address: '0x4178baBE9E5148c6D5fd431cD72884B07Ad855a0',
+            earnings: '10000000000000000000',
+            name: 'admin',
+        },
+        ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => ({
+            active: true,
+            address: computeAddress(memberKeys[i]),
+            earnings: (10 - i) + '000000000000000000',
+        }))
     ])
 
+    log('Old data union successfully set up, migrating to new data union')
     const timeBeforeMs = Date.now()
 
     const env = {
         DEBUG: 'Streamr:*'
     }
-    const executable = 'bin/du-migrate.js '
-        + '--old ' + oldDataUnion.address
-        + '--key ' + config.clientOptions.auth.privateKey
-        + '--'
-    log(Object.keys(env).map((k) => k + '=' + env[k] + ' ').join('') + executable)
+    const cmdLine = ['bin/du-migrate.js',
+        '--old', oldDataUnion.address,
+        '--key', config.clientOptions.auth.privateKey,
+        '--factory-address', config.clientOptions.factoryMainnetAddress,
+        '--streamr-ws', config.clientOptions.url,
+        '--streamr-url', config.clientOptions.restUrl,
+        '--ethereum-url', config.clientOptions.mainnet.url,
+        '--sidechain-url', config.clientOptions.sidechain.url,
+    ]
+    log(Object.keys(env).map(k => k + '=' + env[k] + ' ').join('') + cmdLine.join(' '))
 
-    const scriptProcess = spawn(process.execPath, [executable], { env })
-    scriptProcess.stdout.on('data', (data) => { log(`(server stdout) ${data.toString().trim()}`) })
-    scriptProcess.stderr.on('data', (data) => { log(`(server stderr) ${data.toString().trim()}`) })
-    scriptProcess.on('close', (code) => { log(`server exited with code ${code}`) })
-    scriptProcess.on('error', (err) => { log(`server ERROR: ${err}`) })
+    const scriptProcess = spawn(process.execPath, cmdLine, { env })
+    scriptProcess.stdout.on('data', data => { log(`(server stdout) ${data.toString().trim()}`) })
+    scriptProcess.stderr.on('data', data => { log(`(server stderr) ${data.toString().trim()}`) })
+    scriptProcess.on('close', code => { log(`server exited with code ${code}`) })
+    scriptProcess.on('error', err => { log(`server ERROR: ${err}`) })
 
-    await untilStreamContains(scriptProcess.stdout, '[DONE]')
+    // debug library logs into stderr
+    await untilStreamContains(scriptProcess.stderr, '[DONE]')
     scriptProcess.kill()
 
     const timeMs = Date.now() - timeBeforeMs
     log('Script took', timeMs, 'ms')
 
-    const balanceAfter = await adminTokenMainnet.balanceOf(member2Wallet.address)
-    const balanceIncrease = balanceAfter.sub(balanceBefore)
+    log('Checking everyone got their earnings in the new DU')
+    const newBalances = Promise.all(memberClients.map(async client => client.getMemberBalance()))
 
     await providerMainnet.removeAllListeners()
     await providerSidechain.removeAllListeners()
-    await memberClient.ensureDisconnected()
     await adminClient.ensureDisconnected()
+    await Promise.all(memberClients.map(client => client.ensureDisconnected()))
 
-    assert.strictEqual(stats.status, 'active')
-    assert.strictEqual(stats.earningsBeforeLastJoin, '0')
-    assert.strictEqual(stats.lmeAtJoin, '0')
-    assert.strictEqual(stats.totalEarnings, '1000000000000000000')
-    assert.strictEqual(stats.withdrawableEarnings, '1000000000000000000')
-    assert.strictEqual(balanceIncrease.toString(), amount.toString())
-    assert.strictEqual(isValid, true)
-    assert.strictEqual(resp.error, undefined)
+    assert.deepStrictEqual(newBalances.map(b => b.toString()), oldMemberList.map(m => m.earnings))
+
+    // assert.strictEqual(oldDUstats.status, 'active')
+    // assert.strictEqual(oldDUstats.earningsBeforeLastJoin, '0')
+    // assert.strictEqual(oldDUstats.lmeAtJoin, '0')
+    // assert.strictEqual(oldDUstats.totalEarnings, '1000000000000000000')
+    // assert.strictEqual(oldDUstats.withdrawableEarnings, '1000000000000000000')
 })

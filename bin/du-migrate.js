@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 const DataunionVault = require('../contracts/DataunionVault.json')
-const DataUnionFactoryMainnet = require('../contracts/DataUnionFactoryMainnet.json')
-const DataUnionFactorySidechain = require('../contracts/DataUnionFactorySidechain.json')
-const Token = require('../contracts/IERC20.json')
+const DataUnionMainnet = require('../contracts/DataUnionMainnet.json')
+const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
+const Token = require('../contracts/ERC20Detailed.json')
+const TokenMediator = require('../contracts/ITokenMediator.json')
+
 const debug = require('debug')('Streamr:DU:migrate')
 
-const { httpGet, sleep } = require('../src/utils')
 const StreamrClient = require('streamr-client')
 const {
     utils: { getAddress, formatEther },
@@ -16,8 +17,10 @@ const {
     BigNumber,
     Wallet,
 } = require('ethers')
+const { streamrFetch, until } = require('../src/utils')
 const CliProgress = require('cli-progress')
 require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
+
 
 /**
  * @typedef {Object} Options
@@ -97,6 +100,9 @@ debug('Wallet address', wallet.address)
 async function start() {
     const network = await provider.getNetwork()
     console.log(`Connected to Ethereum network ${JSON.stringify(network)}`)
+    const sidechainNetwork = await sidechainProvider.getNetwork()
+    console.log(`Connected to Streamr sidechain ${JSON.stringify(sidechainNetwork)}`)
+    // TODO: check network IDs, throw error if not what expected
 
     const oldDuAddress = getAddress(options.old)
     const oldDataUnion = new Contract(oldDuAddress, DataunionVault.abi, provider)
@@ -107,7 +113,7 @@ async function start() {
     })
 
     // [ { address, earnings, active } ]
-    const members = (await httpGet(client, oldDuAddress, '/members'))
+    const members = (await streamrFetch(client, `/dataunions/${oldDuAddress}/members`))
         .filter((m) => m.active)
         .map((m) => ({
             address: m.address,
@@ -124,23 +130,50 @@ async function start() {
     if (!options.new) {
         // TODO: double check that tokenAddress that would be used is correct!
         console.log('Deploying a new data union contract...')
-        client.options.dataUnion = !options.dryRun ? await client.deployDataUnion() : '0xbeef0beef0beef0beef0beef0beef0beef0beef0'
+        client.options.dataUnion = !options.dryRun ? await client.deployDataUnion() : await client.getDataUnionContract({ dataUnionAddress: '0xbeef0beef0beef0beef0beef0beef0beef0beef0' })
         console.log('Deployed a new data union contract!')
         console.log(`*** NOTE: please add "--new ${client.options.dataUnion.address}" to the command-line to continue later`)
     }
     const dataUnion = await client.getDataUnionContract()
-    const dataUnionSidechain = new Contract(dataUnion.sidechain.address, DataUnionFactorySidechain.abi, sidechainWallet)
+    const dataUnionMainnet = new Contract(dataUnion.address, DataUnionMainnet.abi, wallet)
+    const dataUnionSidechain = new Contract(dataUnion.sidechain.address, DataUnionSidechain.abi, sidechainWallet)
 
     // TODO: check DATA balance in mainnet, transfer over the bridge enough to cover migration
     // check that the key controls enough sidechain tokens to do the migration
-    let sidechainToken
+    // let sidechainToken
     if (!options.dryRun) {
+        debug('Sidechain contract', dataUnionSidechain.address)
+        await until(async () => {
+            const code = await sidechainProvider.getCode(dataUnionSidechain.address)
+            debug('Code', code)
+            return code !== '0x'
+        }, 300000, 5000)
         const sidechainTokenAddress = await dataUnionSidechain.token()
-        sidechainToken = new Contract(sidechainTokenAddress, Token.abi, sidechainWallet)
-        const startingTokenBalance = await sidechainToken.balanceOf(wallet.address)
-        console.log(`${wallet.address} has ${formatEther(startingTokenBalance)} sidechain DATA`)
-        if (oldDuTokenBalance.gt(startingTokenBalance)) {
-            throw new Error('Not enough tokens in the sidechain to perform migration! Please send DATA to sidechain first, then try again.')
+        const sidechainToken = new Contract(sidechainTokenAddress, Token.abi, sidechainWallet)
+        debug('Sidechain token:', await sidechainToken.name(), sidechainToken.address)
+        const sidechainTokenBalance = await sidechainToken.balanceOf(wallet.address)
+        console.log(`${wallet.address} has ${formatEther(sidechainTokenBalance)} sidechain DATA`)
+        if (oldDuTokenBalance.gt(sidechainTokenBalance)) {
+            const missingSidechainTokens = oldDuTokenBalance.sub(sidechainTokenBalance)
+            const mainnetTokenBalance = await token.balanceOf(wallet.address)
+            if (missingSidechainTokens.gt(mainnetTokenBalance)) {
+                throw new Error(`${formatEther(missingSidechainTokens)} more tokens required in sidechain! Only ${formatEther(mainnetTokenBalance)} tokens available in mainnet. Please more tokens to sidechain address ${wallet.address} first, then try again.`)
+            }
+            console.log('Not enough tokens in the sidechain to perform migration! Sending tokens from mainnet.')
+            const tokenMediatorAddress = await dataUnionMainnet.token_mediator()
+            const tokenMediator = new Contract(tokenMediatorAddress, TokenMediator.abi, wallet)
+            const approveTx = await token.connect(wallet).approve(tokenMediator.address, missingSidechainTokens)
+            const approveTr = await approveTx.wait()
+            debug('Token approve receipt', approveTr)
+            const relayTx = await tokenMediator['relayTokens(address,uint256)'](wallet.address, missingSidechainTokens)
+            const relayTr = await relayTx.wait()
+            debug('Token relay receipt', relayTr)
+
+            debug(`Waiting for sidechain balance ${formatEther(sidechainTokenBalance)} to change`)
+            await until(async () => !(await sidechainToken.balanceOf(wallet.address)).eq(sidechainTokenBalance), 60000, 2000)
+
+            const sidechainTokenBalance2 = await sidechainToken.balanceOf(wallet.address)
+            console.log(`${wallet.address} now has ${formatEther(sidechainTokenBalance2)} sidechain DATA`)
         }
 
         // sanity check: token addresses must match

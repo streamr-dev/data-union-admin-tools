@@ -1,5 +1,5 @@
 const fetch = require('node-fetch')
-const { getAddress } = require('ethers')
+const { utils: { getAddress } } = require('ethers')
 const debug = require('debug')('Streamr:DU:admin-tools-utils')
 
 async function sleep(ms) {
@@ -9,12 +9,8 @@ async function sleep(ms) {
 }
 
 /**
- * @callback UntilCondition
- * @returns {boolean} signifying if it should stop waiting and continue execution
- */
-/**
  * Wait until a condition is true
- * @param {UntilCondition|Promise<boolean>} condition wait until this callback function returns true
+ * @param {Function<boolean>|Promise<boolean>} condition wait until this callback function returns true
  * @param {number} [timeOutMs=10000] stop waiting after that many milliseconds, -1 for disable
  * @param {number} [pollingIntervalMs=100] check condition between so many milliseconds
  */
@@ -25,13 +21,12 @@ async function until(condition, timeOutMs = 10000, pollingIntervalMs = 100) {
     }
 
     // Promise wrapped condition function works for normal functions just the same as Promises
-    while (!await Promise.resolve().then(condition)) { // eslint-disable-line no-await-in-loop
+    while (!await Promise.resolve().then(condition)) {
         if (timeout) {
             throw new Error(`Timeout after ${timeOutMs} milliseconds`)
         }
-        await sleep(pollingIntervalMs) // eslint-disable-line no-await-in-loop
+        await sleep(pollingIntervalMs)
     }
-    return condition()
 }
 
 /**
@@ -72,17 +67,27 @@ async function untilStreamMatches(stream, regex) {
     })
 }
 
-async function httpGet(client, dataUnionContractAddress, endpoint, opts = {}) {
-    const url = `${client.options.restUrl}/dataunions/${dataUnionContractAddress}${endpoint}`
-    debug('Sending HTTP get to', url)
-    const response = await fetch(url, opts)
+// TODO: consider adding to streamr-javascript-client as StreamrClient.fetch(endpoint, opts),
+//         as similar to node-fetch as possible
+async function streamrFetch(client, endpoint, opts = {}) {
+    const sessionToken = await client.session.getSessionToken()
+    const url = `${client.options.restUrl}${endpoint}`
+    debug('Sending HTTP get to', url, 'with session token', sessionToken)
+    const postHeader = opts.body ? { 'Content-Type': 'application/json' } : {}
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${sessionToken}`,
+            ...postHeader,
+        },
+        ...opts
+    })
     const json = await response.json()
     debug('Response', json)
 
     // server may return things like { code: "ConnectionPoolTimeoutException", message: "Timeout waiting for connection from pool" }
     //   they must still be handled as errors
     if (json.error || json.code) {
-        throw new Error(json)
+        throw new Error(`Server returned ${JSON.stringify(json)}`)
     } else if (!response.ok && !json.error) {
         throw new Error(`Server returned ${response.status} ${response.statusText}`)
     }
@@ -111,7 +116,7 @@ module.exports = {
     until,
     untilStreamMatches,
     untilStreamContains,
-    httpGet,
+    streamrFetch,
     throwIfBadAddress,
     throwIfNotContract,
 }

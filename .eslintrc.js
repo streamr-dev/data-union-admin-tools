@@ -16,6 +16,7 @@ module.exports = {
         'semi-style': ['warn', 'first'],
         'no-restricted-syntax': 'off',
         'no-continue': 'off',
+        'arrow-parens': 'off',
 
         // CLI tool specific
         'no-console': 'off',
