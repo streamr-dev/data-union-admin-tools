@@ -15,6 +15,7 @@ const StreamrClient = require('streamr-client')
 const {
     until,
     untilStreamContains,
+    untilStreamMatches,
     throwIfBadAddress,
     throwIfNotContract,
     streamrFetch,
@@ -295,15 +296,19 @@ it('Migrates an old DU to a new DU', async function test() {
     scriptProcess.on('close', code => { log(`server exited with code ${code}`) })
     scriptProcess.on('error', err => { log(`server ERROR: ${err}`) })
 
+    const addressMatch = untilStreamMatches(scriptProcess.stdout, /"--new (.*)"/)
+
     // debug library logs into stderr
     await untilStreamContains(scriptProcess.stderr, '[DONE]')
+
+    const dataUnionAddress = (await addressMatch)[1]
     scriptProcess.kill()
 
     const timeMs = Date.now() - timeBeforeMs
     log('Script took', timeMs, 'ms')
 
     log('Checking everyone got their earnings in the new DU')
-    const newBalances = await Promise.all(memberClients.map(async client => client.getMemberBalance()))
+    const newBalances = await Promise.all(memberClients.map(client => client.getMemberBalance({ dataUnionAddress })))
 
     await providerMainnet.removeAllListeners()
     await providerSidechain.removeAllListeners()
