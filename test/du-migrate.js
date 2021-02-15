@@ -303,7 +303,7 @@ it('Migrates an old DU to a new DU', async function test() {
     log('Script took', timeMs, 'ms')
 
     log('Checking everyone got their earnings in the new DU')
-    const newBalances = Promise.all(memberClients.map(async client => client.getMemberBalance()))
+    const newBalances = await Promise.all(memberClients.map(async client => client.getMemberBalance()))
 
     await providerMainnet.removeAllListeners()
     await providerSidechain.removeAllListeners()
