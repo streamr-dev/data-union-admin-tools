@@ -303,12 +303,13 @@ it('Migrates an old DU to a new DU', async function test() {
 
     const dataUnionAddress = (await addressMatch)[1]
     scriptProcess.kill()
+    log('New Data Union address', dataUnionAddress, await addressMatch)
 
     const timeMs = Date.now() - timeBeforeMs
     log('Script took', timeMs, 'ms')
 
     log('Checking everyone got their earnings in the new DU')
-    const newBalances = await Promise.all(memberClients.map(client => client.getMemberBalance({ dataUnionAddress })))
+    const newBalances = await Promise.all(memberClients.map(client => client.getMemberBalance(null, { dataUnionAddress })))
 
     await providerMainnet.removeAllListeners()
     await providerSidechain.removeAllListeners()
