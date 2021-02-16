@@ -56,6 +56,8 @@ app.post('/', (req, res) => {
 
     console.log(`Received request ${memberAddress} -> ${recipientAddress} signature ${signature}`)
 
+    // TODO: once tests pass, move code below this to src/signed-withdraw
+
     if (!isAddress(dataUnionAddress)) {
         res.send({ error: 'dataUnionAddress parameter not found or invalid Ethereum address' })
         return
