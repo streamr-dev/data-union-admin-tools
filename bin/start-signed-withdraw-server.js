@@ -84,10 +84,10 @@ app.post('/', (req, res) => {
         return
     }
 
-    const ethersOptions = {
+    const withdrawOptions = {
         tokenAddress
     }
-    if (GAS_PRICE_GWEI) { ethersOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
+    if (GAS_PRICE_GWEI) { withdrawOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
 
     const streamrOptions = {
         auth: { privateKey: SERVER_PRIVATE_KEY },
@@ -99,12 +99,12 @@ app.post('/', (req, res) => {
     const client = new StreamrClient(streamrOptions)
 
     // signature = await client.signWithdrawTo(recipientAddress, options)
-    console.log(`Calling withdrawToSigned("${memberAddress}", "${recipientAddress}", "${signature}", ${JSON.stringify(ethersOptions)})`)
+    console.log(`Calling withdrawToSigned("${memberAddress}", "${recipientAddress}", "${signature}", ${JSON.stringify(withdrawOptions)})`)
     client.withdrawToSigned(
         memberAddress,
         recipientAddress,
         signature,
-        ethersOptions
+        withdrawOptions
     ).then((tr) => {
         res.send({ transaction: tr.hash })
         return client.ensureDisconnected()

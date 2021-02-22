@@ -12,7 +12,7 @@ const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
 
 const config = require('./config')
 
-const PORT = 4567
+const PORT = '4567'
 const log = debug('Streamr:signed-withdraw-server:test')
 // const { log } = console
 
@@ -131,7 +131,7 @@ it.skip('Signed withdraw server successfully withdraws earnings', async function
     const sidechainContract = new Contract(dataUnion.sidechain.address, DataUnionSidechain.abi, adminWalletSidechain)
     const tx3 = await sidechainContract.refreshRevenue()
     const tr3 = await tx3.wait()
-    log(`addRevenue returned ${JSON.stringify(tr3)}`)
+    log(`refreshRevenue returned ${JSON.stringify(tr3)}`)
     log(`DU balance: ${await dataUnion.sidechain.totalEarnings()}`)
 
     const duBalance3 = await adminTokenMainnet.balanceOf(dataUnion.address)
@@ -141,7 +141,7 @@ it.skip('Signed withdraw server successfully withdraws earnings', async function
 
     // note: getMemberStats without explicit address => get stats of the authenticated StreamrClient
     const stats = await memberClient.getMemberStats()
-    log(`Stats: ${JSON.stringify(stats)}. Withdrawing tokens...`)
+    log(`Stats: ${JSON.stringify(stats)}. Getting signature for withdraw...`)
 
     const signature = await memberClient.signWithdrawTo(member2Wallet.address)
     const isValid = await sidechainContract.signatureIsValid(memberWallet.address, member2Wallet.address, '0', signature) // '0' = all earnings
@@ -149,7 +149,7 @@ it.skip('Signed withdraw server successfully withdraws earnings', async function
 
     log(`sidechainDU(${sidechainContract.address}) token balance ${await tokenSidechain.balanceOf(sidechainContract.address)}`)
     const balanceBefore = await adminTokenMainnet.balanceOf(member2Wallet.address)
-    log(`balanceBefore ${balanceBefore}. Withdrawing tokens...`)
+    log(`Member 2 (${member2Wallet.address}) balance before: ${formatEther(balanceBefore)}. Withdrawing tokens...`)
 
     const timeBeforeMs = Date.now()
     const body = JSON.stringify({
@@ -169,9 +169,10 @@ it.skip('Signed withdraw server successfully withdraws earnings', async function
     }).then((res) => res.json())
     const timeMs = Date.now() - timeBeforeMs
 
-    log(`Tokens withdrawn, response from server (in ${timeMs}ms): ${JSON.stringify(resp)}`)
+    log(`Response from server (in ${timeMs}ms): ${JSON.stringify(resp)}`)
     const balanceAfter = await adminTokenMainnet.balanceOf(member2Wallet.address)
     const balanceIncrease = balanceAfter.sub(balanceBefore)
+    log(`Member 2 (${member2Wallet.address}) balance after: ${formatEther(balanceAfter)}. Increased by ${formatEther(balanceIncrease)}`)
 
     await providerMainnet.removeAllListeners()
     await providerSidechain.removeAllListeners()
