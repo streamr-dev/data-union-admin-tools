@@ -10,6 +10,7 @@ module.exports = {
         tokenAddress: process.env.TOKEN_ADDRESS || '0xbAA81A0179015bE47Ad439566374F2Bae098686F',
         tokenAddressSidechain: process.env.TOKEN_ADDRESS_SIDECHAIN || '0x73Be21733CC5D08e1a14Ea9a399fb27DB3BEf8fF',
         factoryMainnetAddress: process.env.DU_FACTORY_MAINNET || '0x5E959e5d5F3813bE5c6CeA996a286F734cc9593b',
+        streamrNodeAddress: '0xFCAd0B19bB29D4674531d6f115237E16AfCE377c',
         sidechain: {
             url: process.env.SIDECHAIN_URL || 'http://10.200.10.1:8546',
             timeout: process.env.TEST_TIMEOUT,
@@ -22,4 +23,5 @@ module.exports = {
         autoDisconnect: false,
     },
     tokenAdminPrivateKey: '0x5e98cce00cff5dea6b454889f359a4ec06b9fa6b88e9d69b86de8e1c81887da0',
+    streamrOperatorAddress: '0xa3d1F77ACfF0060F7213D7BF3c7fEC78df847De1',
 }
