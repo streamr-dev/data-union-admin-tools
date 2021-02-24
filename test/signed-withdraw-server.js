@@ -12,7 +12,6 @@ const DataUnionSidechain = require('../contracts/DataUnionSidechain.json')
 
 const config = require('./config')
 
-const PORT = '4567'
 const log = debug('Streamr:signed-withdraw-server:test')
 // const { log } = console
 
@@ -26,8 +25,22 @@ const tokenMainnet = new Contract(config.clientOptions.tokenAddress, Token.abi, 
 
 const env = {
     SERVER_PRIVATE_KEY: config.clientOptions.auth.privateKey,
-    PORT,
+    PORT: '4567',
     ETHEREUM_URL: config.clientOptions.mainnet.url,
+
+    ETHEREUM_MAINNET: config.clientOptions.mainnet.url,
+    ETHEREUM_SIDECHAIN: config.clientOptions.sidechain.url,
+    TOKEN_ADDRESS: config.clientOptions.tokenAddress,
+    TOKEN_ADDRESS_SIDECHAIN: config.clientOptions.tokenAddressSidechain,
+
+    STREAMR_WS_URL: config.clientOptions.url,
+    STREAMR_HTTP_URL: config.clientOptions.restUrl,
+
+    FACTORY_MAINNET_ADDRESS: config.clientOptions.factoryMainnetAddress,
+    FACTORY_SIDECHAIN_ADDRESS: config.clientOptions.factorySidechainAddress,
+
+    STREAMR_NODE_ADDRESS: config.clientOptions.streamrNodeAddress,
+
     // GAS_PRICE_GWEI,
 }
 const executable = 'bin/start-signed-withdraw-server.js'
@@ -145,7 +158,7 @@ it('Signed withdraw server successfully withdraws earnings', async function () {
 
     const signature = await memberClient.signWithdrawTo(member2Wallet.address)
     const isValid = await sidechainContract.signatureIsValid(memberWallet.address, member2Wallet.address, '0', signature) // '0' = all earnings
-    log(`Signature for all tokens ${memberWallet.address} -> ${member2Wallet.address}: ${signature}, checked ${isValid ? 'OK' : '!!!BROKEN!!!'}`)
+    log(`Signature for all tokens ${memberWallet.address} -> ${member2Wallet.address}: ${signature}, checked by ${sidechainContract.address} ${isValid ? 'OK' : '!!!BROKEN!!!'}`)
 
     log(`sidechainDU(${sidechainContract.address}) token balance ${await tokenSidechain.balanceOf(sidechainContract.address)}`)
     const balanceBefore = await adminTokenMainnet.balanceOf(member2Wallet.address)
@@ -156,7 +169,6 @@ it('Signed withdraw server successfully withdraws earnings', async function () {
         dataUnionAddress: dataUnion.address,
         memberAddress: memberWallet.address,
         recipientAddress: member2Wallet.address,
-        tokenAddress,
         signature,
     })
     log(`curl -X POST -H "Content-Type: application/json" -d '${body}' ${serverUrl}`)
