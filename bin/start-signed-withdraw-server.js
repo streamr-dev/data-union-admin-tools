@@ -25,8 +25,23 @@ const {
     PORT = 3000,
     DATA_UNION_ADDRESS,
 
-    ETHEREUM_URL, // explicitly specify Ethereum node address
+    ETHEREUM_MAINNET, // default: mainnet
+    ETHEREUM_SIDECHAIN, // default: production (once available)
     GAS_PRICE_GWEI,
+    TOKEN_ADDRESS,
+    TOKEN_ADDRESS_SIDECHAIN,
+
+    STREAMR_WS_URL, // default: production
+    STREAMR_HTTP_URL, // default: production
+
+    FACTORY_MAINNET_ADDRESS,
+    FACTORY_SIDECHAIN_ADDRESS,
+
+    PAY_FOR_SIGNATURE_TRANSPORT, // default: yes
+
+    STREAMR_NODE_ADDRESS,
+
+    QUIET,
 } = process.env
 
 if (!SERVER_PRIVATE_KEY) {
@@ -38,6 +53,19 @@ let duWhitelist
 if (DATA_UNION_ADDRESS) {
     duWhitelist = DATA_UNION_ADDRESS.split(',').map(getAddress)
 }
+
+const serverStreamrOptions = {}
+if (FACTORY_MAINNET_ADDRESS) { serverStreamrOptions.factoryMainnetAddress = getAddress(FACTORY_MAINNET_ADDRESS) }
+if (FACTORY_SIDECHAIN_ADDRESS) { serverStreamrOptions.factorySidechainAddress = getAddress(FACTORY_SIDECHAIN_ADDRESS) }
+if (TOKEN_ADDRESS) { serverStreamrOptions.tokenAddress = getAddress(TOKEN_ADDRESS) }
+if (TOKEN_ADDRESS_SIDECHAIN) { serverStreamrOptions.tokenAddressSidechain = getAddress(TOKEN_ADDRESS_SIDECHAIN) }
+if (STREAMR_NODE_ADDRESS) { serverStreamrOptions.streamrNodeAddress = getAddress(STREAMR_NODE_ADDRESS) }
+
+if (STREAMR_WS_URL) { serverStreamrOptions.url = STREAMR_WS_URL }
+if (STREAMR_HTTP_URL) { serverStreamrOptions.restUrl = STREAMR_HTTP_URL }
+if (PAY_FOR_SIGNATURE_TRANSPORT) { serverStreamrOptions.payForSignatureTransport = !!PAY_FOR_SIGNATURE_TRANSPORT }
+if (ETHEREUM_MAINNET) { serverStreamrOptions.mainnet = ETHEREUM_MAINNET }
+if (ETHEREUM_SIDECHAIN) { serverStreamrOptions.sidechain = ETHEREUM_SIDECHAIN }
 
 consoleStamper(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 const app = express()
@@ -51,6 +79,7 @@ app.post('/', (req, res) => {
         memberAddress,
         recipientAddress,
         signature,
+        tokenAddress,
     } = req.body
 
     console.log(`Received request ${memberAddress} -> ${recipientAddress} signature ${signature}`)
@@ -83,29 +112,29 @@ app.post('/', (req, res) => {
         return
     }
 
-    const ethersOptions = {}
-    if (GAS_PRICE_GWEI) { ethersOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
+    const withdrawOptions = {}
+    if (GAS_PRICE_GWEI) { withdrawOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
 
     const streamrOptions = {
+        ...serverStreamrOptions,
         auth: { privateKey: SERVER_PRIVATE_KEY },
         dataUnion,
     }
-    if (ETHEREUM_URL) { streamrOptions.mainnet = { url: ETHEREUM_URL } }
-
     const client = new StreamrClient(streamrOptions)
 
     // signature = await client.signWithdrawTo(recipientAddress, options)
-    console.log(`Calling withdrawToSigned("${memberAddress}", "${recipientAddress}", "${signature}", ${JSON.stringify(ethersOptions)})`)
+    console.log(`Client created with ${JSON.stringify(streamrOptions)}`)
+    console.log(`Calling withdrawToSigned("${memberAddress}", "${recipientAddress}", "${signature}", ${JSON.stringify(withdrawOptions)})`)
     client.withdrawToSigned(
         memberAddress,
         recipientAddress,
         signature,
-        ethersOptions
+        withdrawOptions
     ).then((tr) => {
         res.send({ transaction: tr.hash })
         return client.ensureDisconnected()
     }).catch((e) => {
-        res.send({ error: e.message })
+        res.send({ error: e.message, stack: e.stack })
     })
 })
 
