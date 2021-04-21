@@ -73,7 +73,7 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
     .option('dry-run', {
         type: 'boolean',
         default: false,
-        describe: 'If this option is given, the script doesn\'t really kick members from the data union, but instead logs kicks to the console.',
+        describe: 'If this option is given, the script doesn\'t really transfer tokens, instead just logs to the console.',
     })
     .argv
 
