@@ -78,7 +78,7 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
     .argv
 
 const streamrOpts = { auth: { privateKey: options.key } }
-if (options.url) { streamrOpts.url = options.streamrWs }
+if (options.streamrWs) { streamrOpts.url = options.streamrWs }
 if (options.streamrUrl) { streamrOpts.restUrl = options.streamrUrl }
 if (options.ethereumUrl) { streamrOpts.mainnet = { url: options.ethereumUrl } }
 if (options.sidechainUrl) { streamrOpts.sidechain = { url: options.sidechainUrl } }
