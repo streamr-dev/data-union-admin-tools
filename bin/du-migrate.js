@@ -70,6 +70,10 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
         type: 'string',
         describe: 'The Ethereum client RPC URL to use for Streamr sidechain provider',
     })
+    .option('test-divider', {
+        type: 'number',
+        describe: 'For testing purposes: Instead of sending the full amount, only send `test-divider` part, e.g. 1000 -> send 1/1000th of the real amount'
+    })
     .option('dry-run', {
         type: 'boolean',
         default: false,
@@ -84,6 +88,7 @@ if (options.ethereumUrl) { streamrOpts.mainnet = { url: options.ethereumUrl } }
 if (options.sidechainUrl) { streamrOpts.sidechain = { url: options.sidechainUrl } }
 if (options.factoryAddress) { streamrOpts.factoryMainnetAddress = options.factoryAddress }
 if (options.new) { streamrOpts.dataUnion = options.new }
+const testDivider = BigNumber.from(options.testDivider || '1') // throws if truthy but bad number
 debug('Command-line options', options)
 debug('StreamrClient options', streamrOpts)
 
@@ -211,7 +216,8 @@ async function start() {
         progress.update(progress.value + 1, member)
 
         if (!options.dryRun) {
-            const tx = await dataUnionSidechain.transferToMemberInContract(member.address, member.balance)
+            const amount = member.balance.div(testDivider)
+            const tx = await dataUnionSidechain.transferToMemberInContract(member.address, amount)
             const tr = await tx.wait()
             debug('Transaction receipt', tr)
         }
@@ -222,4 +228,3 @@ async function start() {
     debug('[DONE]')
 }
 start().catch(console.error)
-
