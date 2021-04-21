@@ -1,5 +1,7 @@
 ## data-union-admin-tools
 
+![CI badge](https://github.com/streamr-dev/data-union-admin-tools/actions/workflows/nodejs.yml/badge.svg)
+
 This repository contains a selection of command-line tools for administering Data Unions on Streamr:
 
 * [autokick](#binautokickjs)
@@ -7,7 +9,7 @@ This repository contains a selection of command-line tools for administering Dat
 
 ### Installation
 
-To use the tools, you should have node.js and `git` installed as prerequisites. 
+To use the tools, you should have node.js and `git` installed as prerequisites.
 
 * Clone the repo: `git clone git@github.com:streamr-dev/data-union-admin-tools.git`
 * `cd data-union-admin-tools`
@@ -78,7 +80,7 @@ Where the arguments are:
 
 * `--stream [streamId]`: The id of the stream your users are sending signed messages to. You can give the `--stream` option multiple times if there are multiple streams related to your data union.
 * `--contract-address [address]`: The Ethereum address of your data union smart contract.
-* `--private-key [key]`: An Ethereum private key for an address that has been granted permissions to: 
+* `--private-key [key]`: An Ethereum private key for an address that has been granted permissions to:
   * Read data in all the streams given with `--stream`, and
   * Write to the join/part stream of your data union (not required in `--dry-run` mode, as you're not really kicking anybody)
 
