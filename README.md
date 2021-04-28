@@ -2,6 +2,8 @@
 
 ![CI badge](https://github.com/streamr-dev/data-union-admin-tools/actions/workflows/nodejs.yml/badge.svg)
 
+**UTILITIES IN THIS REPOSITORY SHOULD BE CONSIDERED EXPERIMENTAL. USE AT YOUR OWN RISK, PLEASE KNOW WHAT YOU'RE DOING. [Contact us in Discord](https://discord.com/invite/gZAm8P7hK8) if you're unsure.**
+
 This repository contains a selection of command-line tools for administering Data Unions on Streamr:
 
 * [autokick](#binautokickjs)
