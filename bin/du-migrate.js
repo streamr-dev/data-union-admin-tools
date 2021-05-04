@@ -25,6 +25,25 @@ require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 // TODO: include as option
 const tokenMigrationThreshold = 1
 
+// For sending the sidechain tx in parallel
+class AutoNonceWallet extends Wallet {
+    constructor(...args) {
+        super(...args)
+        this._noncePromise = null
+    }
+
+    sendTransaction(transaction) {
+        if (transaction.nonce == null) {
+            if (this._noncePromise == null) {
+                this._noncePromise = this.provider.getTransactionCount(this.address)
+            }
+            transaction.nonce = this._noncePromise // eslint-disable-line no-param-reassign
+            this._noncePromise = this._noncePromise.then((nonce) => (nonce + 1))
+        }
+        return super.sendTransaction(transaction)
+    }
+}
+
 /**
  * @typedef {Object} Options
  * @property {String} old
@@ -84,6 +103,11 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
         default: false,
         describe: 'If this option is given, the script doesn\'t really transfer tokens, instead just logs to the console.',
     })
+    .option('parallel', {
+        type: 'number',
+        describe: 'Number of transactions to run in parallel',
+        default: 1,
+    })
     .argv
 
 const streamrOpts = { auth: { privateKey: options.key } }
@@ -102,7 +126,7 @@ if (!sidechainProvider) {
     throw new Error('Must provide --sidechainUrl')
 }
 const wallet = new Wallet(options.key, provider)
-const sidechainWallet = new Wallet(options.key, sidechainProvider)
+const sidechainWallet = new AutoNonceWallet(options.key, sidechainProvider)
 debug('Wallet address', wallet.address)
 
 async function start() {
@@ -197,28 +221,20 @@ async function start() {
         debug('Approve tx receipt', approveTr)
     }
 
-    // handle members starting from the one with most un-withdrawn earnings
-    console.log(`Migrating ${oldDuAddress} -> ${dataUnionMainnet.address} (mainnet) / ${dataUnionSidechain.address} (sidechain)`)
-    const progress = new CliProgress.SingleBar({ format: '{address} {bar} {value} / {total} {tokensToMigrate} DATA | ETA: {eta_formatted}' }, CliProgress.Presets.shades_grey)
-    progress.start(members.length, 0)
-    while (members.length > 0) {
-        // pick the member with most tokens left to withdraw
-        //   if (current) biggest earner has withdrawn tokens, re-do the sort (sorting is cheap compared to RPC calls)
-        const member = members[0]
+    // calculate tokensToMigrate, or do the migration if previously calculated
+    async function migrate(member) {
         if (!member.tokensToMigrate) {
             const withdrawn = await oldDataUnion.withdrawn(member.address)
             const migratedEarnings = await dataUnionSidechain.getEarnings(member.address).catch(() => BigNumber.from(0))
+            // we know at this point that in one round, the same address shouldn't be processed twice, so there won't be a race for the tokensToMigrate attribute
+            // eslint-disable-next-line require-atomic-updates, no-param-reassign
             member.tokensToMigrate = member.earnings.sub(withdrawn).div(testDivider).sub(migratedEarnings)
-            if (withdrawn.gt(0) || migratedEarnings.gt(0)) {
-                members.sort((m1, m2) => ((m1.tokensToMigrate || m1.earnings.div(testDivider)).gt(m2.tokensToMigrate || m2.earnings.div(testDivider)) ? -1 : 1))
-                if (member.address !== members[0].address) { continue }
-            }
+            return
         }
+
         if (member.tokensToMigrate.lt(tokenMigrationThreshold)) {
-            console.log(`Remaining members have less than ${tokenMigrationThreshold} DATA-wei to migrate, ending migration`)
-            break
+            return
         }
-        progress.update(progress.value + 1, member)
 
         if (!options.dryRun) {
             const tx = await dataUnionSidechain.transferToMemberInContract(member.address, member.tokensToMigrate)
@@ -226,7 +242,34 @@ async function start() {
             debug('Transaction receipt', tr)
         }
         console.log(`Transferred to ${member.address}: ${formatEther(member.tokensToMigrate)} DATA`)
-        members.shift() // remove members[0]
+
+        // eslint-disable-next-line require-atomic-updates, no-param-reassign
+        member.tokensToMigrate = BigNumber.from(0)
+    }
+
+    console.log(`Migrating ${oldDuAddress} -> ${dataUnionMainnet.address} (mainnet) / ${dataUnionSidechain.address} (sidechain)`)
+    const progress = new CliProgress.SingleBar({ format: '{address} {bar} {value} / {total} {tokensToMigrate} DATA | ETA: {eta_formatted}' }, CliProgress.Presets.shades_grey)
+    progress.start(members.length, 0)
+    while (members.length > 0) {
+        // pick the members with most earnings left to withdraw
+        //   first round, the tokensToMigrate will be evaluated
+        //   second round, the migration will be done for that amount
+        const membersToProcess = members.slice(0, options.parallel)
+        debug(membersToProcess.map(m => `${m.address} / ${m.earnings}`))
+        await Promise.all(membersToProcess.map(m => migrate(m).catch(console.error)))
+
+        // migrate process sets the tokensToMigrate to zero when it finishes
+        const doneCount = membersToProcess.filter(m => m.tokensToMigrate.eq(0)).length
+        progress.update(progress.value + doneCount, members[0])
+
+        // sort between rounds => if (current) biggest earners have withdrawn tokens, they'll be bumped later in the queue
+        // sorting also shuffles the "done" members to the end
+        members.sort((m1, m2) => ((m1.tokensToMigrate || m1.earnings.div(testDivider)).gt(m2.tokensToMigrate || m2.earnings.div(testDivider)) ? -1 : 1))
+
+        if (members[0].tokensToMigrate && members[0].tokensToMigrate.lt(tokenMigrationThreshold)) {
+            console.log(`Remaining members have less than ${tokenMigrationThreshold} DATA-wei to migrate, ending migration`)
+            break
+        }
     }
 
     debug('[DONE]')
