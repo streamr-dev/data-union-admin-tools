@@ -29,7 +29,7 @@
     "debug": "^4.3.1",
     "ethers": "^5.0.22",
     "express": "^4.17.1",
-    "streamr-client": "5.0.0-beta.6",
+    "streamr-client": "5.2.1",
     "node-fetch": "^2.6.1",
     "yargs": "^15.1.0"
   },

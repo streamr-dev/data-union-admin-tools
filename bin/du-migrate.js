@@ -22,6 +22,9 @@ const { streamrFetch, until } = require('../src/utils')
 
 require('console-stamp')(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
+// TODO: include as option
+const tokenMigrationThreshold = 1
+
 /**
  * @typedef {Object} Options
  * @property {String} old
@@ -38,22 +41,24 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
     .option('old', {
         type: 'string',
         describe: 'The address of the old data union smart contract to migrate from',
-        demand: 'Must give old data union (Ethereum address) to migrate'
+        demand: 'Must give old data union (Ethereum address) to migrate from'
     })
     .option('new', {
         type: 'string',
-        describe: 'The address of the new data union smart contract to migrate to. If omitted, deploy a new DataUnionMainnet contract, see --factoryAddress option.',
+        describe: 'The address of the new data union smart contract to migrate to', //. If omitted, deploy a new DataUnionMainnet contract, see --factoryAddress option.',
+        demand: 'Must give new data union (Ethereum address) to migrate to'
     })
     .option('key', {
         type: 'string',
         describe: 'Ethereum private key of a user that has publish permission to the join/part stream. Either api-key or private-key must be given.',
         demand: 'Must give Ethereum private key to use for deploying new data union and/or updating balances',
     })
-    .option('factory-address', {
-        type: 'string',
-        default: '0xcfd7de20974194b640cbc028cdf3f2be6e43901c', // TODO: remove when this is default in StreamrClient
-        describe: "Ethereum (mainnet) address of DataUnionFactoryMainnet contract. Used only if --new option wasn't given.",
-    })
+    // TODO: to make tests work, lots of other addresses are needed too, now. Maybe take them from env? Maybe ditch yargs entirely?
+    // .option('factory-address', {
+    //     type: 'string',
+    //     default: '0xcfd7de20974194b640cbc028cdf3f2be6e43901c', // TODO: remove when this is default in StreamrClient
+    //     describe: "Ethereum (mainnet) address of DataUnionFactoryMainnet contract. Used only if --new option wasn't given.",
+    // })
     .option('streamr-ws', {
         type: 'string',
         describe: 'The Streamr websocket API URL. By default, uses the default value in the Streamr JS SDK (wss://streamr.network/api/v1/ws)',
@@ -86,14 +91,13 @@ if (options.streamrWs) { streamrOpts.url = options.streamrWs }
 if (options.streamrUrl) { streamrOpts.restUrl = options.streamrUrl }
 if (options.ethereumUrl) { streamrOpts.mainnet = { url: options.ethereumUrl } }
 if (options.sidechainUrl) { streamrOpts.sidechain = { url: options.sidechainUrl } }
-if (options.factoryAddress) { streamrOpts.factoryMainnetAddress = options.factoryAddress }
-if (options.new) { streamrOpts.dataUnion = options.new }
+// if (options.factoryAddress) { streamrOpts.dataunion.factoryMainnetAddress = options.factoryAddress }
 const testDivider = BigNumber.from(options.testDivider || '1') // throws if truthy but bad number
 debug('Command-line options', options)
 debug('StreamrClient options', streamrOpts)
 
 const provider = options.ethereumUrl ? new JsonRpcProvider(options.ethereumUrl) : getDefaultProvider()
-const sidechainProvider = options.sidechainUrl ? new JsonRpcProvider(options.sidechainUrl) : new StreamrClient().getSidechainProvider()
+const sidechainProvider = options.sidechainUrl ? new JsonRpcProvider(options.sidechainUrl) : new StreamrClient().ethereum.getSidechainProvider()
 if (!sidechainProvider) {
     throw new Error('Must provide --sidechainUrl')
 }
@@ -129,36 +133,32 @@ async function start() {
     const tokenAddress = await oldDataUnion.token()
     const token = new Contract(tokenAddress, Token.abi, provider)
     const oldDuTokenBalance = await token.balanceOf(oldDuAddress)
-    console.log(`Old DU has ${formatEther(oldDuTokenBalance)} DATA`)
+    console.log(`Old Data Union has ${formatEther(oldDuTokenBalance)} DATA`)
+    const tokensToDistribute = oldDuTokenBalance.div(testDivider)
+    console.log(`Distributing ${formatEther(tokensToDistribute)} DATA into the new Data Union (divider = ${testDivider}), minus rounding errors`)
 
-    if (!options.new) {
-        // TODO: double check that tokenAddress that would be used is correct!
-        console.log('Deploying a new data union contract...')
-        client.options.dataUnion = !options.dryRun ? await client.deployDataUnion() : await client.getDataUnionContract({ dataUnionAddress: '0xbeef0beef0beef0beef0beef0beef0beef0beef0' })
-        console.log('Deployed a new data union contract!')
-        console.log(`*** NOTE: please add "--new ${client.options.dataUnion.address}" to the command-line to continue later`)
+    const duObject = client.getDataUnion(options.new) // not used after these lines, TODO: maybe make the StreamrClient more useful?
+    const dataUnionMainnet = new Contract(duObject.getAddress(), DataUnionMainnet.abi, wallet)
+    const dataUnionSidechain = new Contract(duObject.getSidechainAddress(), DataUnionSidechain.abi, sidechainWallet)
+
+    debug('Sidechain contract address', dataUnionSidechain.address)
+    const code = await sidechainProvider.getCode(dataUnionSidechain.address)
+    debug('Code: %s', code)
+    if (code === '0x') {
+        throw new Error(`No contract found at ${dataUnionSidechain.address}, check the value of --new argument`)
     }
-    const dataUnion = await client.getDataUnionContract()
-    const dataUnionMainnet = new Contract(dataUnion.address, DataUnionMainnet.abi, wallet)
-    const dataUnionSidechain = new Contract(dataUnion.sidechain.address, DataUnionSidechain.abi, sidechainWallet)
 
-    // TODO: check DATA balance in mainnet, transfer over the bridge enough to cover migration
     // check that the key controls enough sidechain tokens to do the migration
-    // let sidechainToken
     if (!options.dryRun) {
-        debug('Sidechain contract', dataUnionSidechain.address)
-        await until(async () => {
-            const code = await sidechainProvider.getCode(dataUnionSidechain.address)
-            debug('Code', code)
-            return code !== '0x'
-        }, 300000, 5000)
         const sidechainTokenAddress = await dataUnionSidechain.token()
         const sidechainToken = new Contract(sidechainTokenAddress, Token.abi, sidechainWallet)
         debug('Sidechain token:', await sidechainToken.name(), sidechainToken.address)
         const sidechainTokenBalance = await sidechainToken.balanceOf(wallet.address)
         console.log(`${wallet.address} has ${formatEther(sidechainTokenBalance)} sidechain DATA`)
-        if (oldDuTokenBalance.gt(sidechainTokenBalance)) {
-            const missingSidechainTokens = oldDuTokenBalance.sub(sidechainTokenBalance)
+
+        // if not enough DATA in sidechain, check DATA balance in mainnet, transfer over the bridge enough to cover migration
+        if (tokensToDistribute.gt(sidechainTokenBalance)) {
+            const missingSidechainTokens = tokensToDistribute.sub(sidechainTokenBalance)
             const mainnetTokenBalance = await token.balanceOf(wallet.address)
             if (missingSidechainTokens.gt(mainnetTokenBalance)) {
                 throw new Error(`${formatEther(missingSidechainTokens)} more tokens required in sidechain! Only ${formatEther(mainnetTokenBalance)} tokens available in mainnet. Please more tokens to sidechain address ${wallet.address} first, then try again.`)
@@ -181,7 +181,7 @@ async function start() {
         }
 
         // sanity check: token addresses must match
-        const newTokenAddress = await dataUnion.token()
+        const newTokenAddress = await dataUnionMainnet.token()
         debug('Mainnet token address', tokenAddress, '->', newTokenAddress)
         if (tokenAddress !== newTokenAddress) {
             const newToken = new Contract(newTokenAddress, Token.abi, provider)
@@ -191,37 +191,41 @@ async function start() {
         }
 
         // add approval because transferToMemberInContract uses transferFrom
-        debug(`Adding approval for ${oldDuTokenBalance}`)
-        const approveTx = await sidechainToken.approve(dataUnion.sidechain.address, oldDuTokenBalance)
+        debug(`Adding approval for ${tokensToDistribute}`)
+        const approveTx = await sidechainToken.approve(dataUnionSidechain.address, tokensToDistribute)
         const approveTr = await approveTx.wait()
         debug('Approve tx receipt', approveTr)
     }
 
     // handle members starting from the one with most un-withdrawn earnings
-    console.log(`Migrating ${oldDuAddress} -> ${dataUnion.address} (mainnet) / ${dataUnion.sidechain.address} (sidechain)`)
-    const progress = new CliProgress.SingleBar({ format: '{address} {bar} {value} / {total} {balance} DATA | ETA: {eta_formatted}' }, CliProgress.Presets.shades_grey)
+    console.log(`Migrating ${oldDuAddress} -> ${dataUnionMainnet.address} (mainnet) / ${dataUnionSidechain.address} (sidechain)`)
+    const progress = new CliProgress.SingleBar({ format: '{address} {bar} {value} / {total} {tokensToMigrate} DATA | ETA: {eta_formatted}' }, CliProgress.Presets.shades_grey)
     progress.start(members.length, 0)
     while (members.length > 0) {
         // pick the member with most tokens left to withdraw
         //   if (current) biggest earner has withdrawn tokens, re-do the sort (sorting is cheap compared to RPC calls)
         const member = members[0]
-        if (!member.balance) {
+        if (!member.tokensToMigrate) {
             const withdrawn = await oldDataUnion.withdrawn(member.address)
-            member.balance = member.earnings.sub(withdrawn)
-            if (withdrawn.gt(0)) {
-                members.sort((m1, m2) => ((m1.balance || m1.earnings).gt(m2.balance || m2.earnings) ? -1 : 1))
+            const migratedEarnings = await dataUnionSidechain.getEarnings(member.address).catch(() => BigNumber.from(0))
+            member.tokensToMigrate = member.earnings.sub(withdrawn).div(testDivider).sub(migratedEarnings)
+            if (withdrawn.gt(0) || migratedEarnings.gt(0)) {
+                members.sort((m1, m2) => ((m1.tokensToMigrate || m1.earnings.div(testDivider)).gt(m2.tokensToMigrate || m2.earnings.div(testDivider)) ? -1 : 1))
                 if (member.address !== members[0].address) { continue }
             }
+        }
+        if (member.tokensToMigrate.lt(tokenMigrationThreshold)) {
+            console.log(`Remaining members have less than ${tokenMigrationThreshold} DATA-wei to migrate, ending migration`)
+            break
         }
         progress.update(progress.value + 1, member)
 
         if (!options.dryRun) {
-            const amount = member.balance.div(testDivider)
-            const tx = await dataUnionSidechain.transferToMemberInContract(member.address, amount)
+            const tx = await dataUnionSidechain.transferToMemberInContract(member.address, member.tokensToMigrate)
             const tr = await tx.wait()
             debug('Transaction receipt', tr)
         }
-        console.log(`Transferred to ${member.address}: ${formatEther(member.balance)} DATA`)
+        console.log(`Transferred to ${member.address}: ${formatEther(member.tokensToMigrate)} DATA`)
         members.shift() // remove members[0]
     }
 
