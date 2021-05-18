@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+const fs = require('fs')
+
 const StreamrClient = require('streamr-client')
 const {
     utils: { getAddress, formatEther },
@@ -12,6 +14,7 @@ const {
 const yargs = require('yargs')
 const debug = require('debug')('Streamr:DU:migrate')
 const CliProgress = require('cli-progress')
+const exitHook = require('exit-hook')
 
 const DataunionVault = require('../contracts/DataunionVault.json')
 const DataUnionMainnet = require('../contracts/DataUnionMainnet.json')
@@ -98,10 +101,34 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
         type: 'number',
         describe: 'For testing purposes: Instead of sending the full amount, only send `test-divider` part, e.g. 1000 -> send 1/1000th of the real amount'
     })
+    .option('temp', {
+        type: 'string',
+        describe: 'Temporary file location for the migration state (for resuming etc.)',
+        default: 'migrate-state.json'
+    })
+    .option('whitelist-file', {
+        type: 'string',
+        describe: 'JSON file that contains the list of addresses to migrate'
+    })
     .option('dry-run', {
         type: 'boolean',
         default: false,
         describe: 'If this option is given, the script doesn\'t really transfer tokens, instead just logs to the console.',
+    })
+    .option('skip-check', {
+        type: 'boolean',
+        default: false,
+        describe: 'Skip the initial check if there are enough tokens to do the migration (whole from scratch). This is useful for later "update" migrations.',
+    })
+    .option('skip-joins', {
+        type: 'boolean',
+        default: false,
+        describe: 'Skip the initial check if all members have alredy joined the new DU.',
+    })
+    .option('out', {
+        type: 'string',
+        describe: 'JSON file to output migration results on exit',
+        default: 'migrate-results.json'
     })
     .option('parallel', {
         type: 'number',
@@ -120,6 +147,8 @@ const testDivider = BigNumber.from(options.testDivider || '1') // throws if trut
 debug('Command-line options', options)
 debug('StreamrClient options', streamrOpts)
 
+const whitelist = options.whitelistFile ? new Set(JSON.parse(fs.readFileSync(options.whitelistFile))) : null
+
 const provider = options.ethereumUrl ? new JsonRpcProvider(options.ethereumUrl) : getDefaultProvider()
 const sidechainProvider = options.sidechainUrl ? new JsonRpcProvider(options.sidechainUrl) : new StreamrClient().ethereum.getSidechainProvider()
 if (!sidechainProvider) {
@@ -128,6 +157,12 @@ if (!sidechainProvider) {
 const wallet = new Wallet(options.key, provider)
 const sidechainWallet = new AutoNonceWallet(options.key, sidechainProvider)
 debug('Wallet address', wallet.address)
+
+// record what was done before e.g. breaking with Ctrl+C
+const results = []
+exitHook(() => {
+    fs.writeFileSync(options.out, JSON.stringify(results))
+})
 
 async function start() {
     const network = await provider.getNetwork()
@@ -144,24 +179,7 @@ async function start() {
         console.error(err)
     })
 
-    // [ { address, earnings, active } ]
-    const members = (await streamrFetch(client, `/dataunions/${oldDuAddress}/members`))
-        .filter((m) => m.active)
-        .map((m) => ({
-            address: m.address,
-            earnings: BigNumber.from(m.earnings), // total earnings registered to the operator
-        }))
-    members.sort((m1, m2) => (m1.earnings.gt(m2.earnings) ? -1 : 1)) // from largest to smallest (1 and -1 inverted from "normal")
-    console.log(`Found ${members.length} (active) members in the old data union ${oldDuAddress}`)
-
-    const tokenAddress = await oldDataUnion.token()
-    const token = new Contract(tokenAddress, Token.abi, provider)
-    const oldDuTokenBalance = await token.balanceOf(oldDuAddress)
-    console.log(`Old Data Union has ${formatEther(oldDuTokenBalance)} DATA`)
-    const tokensToDistribute = oldDuTokenBalance.div(testDivider)
-    console.log(`Distributing ${formatEther(tokensToDistribute)} DATA into the new Data Union (divider = ${testDivider}), minus rounding errors`)
-
-    const duObject = client.getDataUnion(options.new) // not used after these lines, TODO: maybe make the StreamrClient more useful?
+    const duObject = client.getDataUnion(options.new)
     const dataUnionMainnet = new Contract(duObject.getAddress(), DataUnionMainnet.abi, wallet)
     const dataUnionSidechain = new Contract(duObject.getSidechainAddress(), DataUnionSidechain.abi, sidechainWallet)
 
@@ -172,11 +190,73 @@ async function start() {
         throw new Error(`No contract found at ${dataUnionSidechain.address}, check the value of --new argument`)
     }
 
+    const tokenAddress = await oldDataUnion.token()
+    const token = new Contract(tokenAddress, Token.abi, provider)
+    const oldDuTokenBalance = await token.balanceOf(oldDuAddress)
+    console.log(`Old Data Union has ${formatEther(oldDuTokenBalance)} DATA`)
+
+    const sidechainTokenAddress = await dataUnionSidechain.token()
+    const sidechainToken = new Contract(sidechainTokenAddress, Token.abi, sidechainWallet)
+    debug('Sidechain token:', await sidechainToken.name(), sidechainToken.address)
+    const newDuTokenBalance = await sidechainToken.balanceOf(dataUnionSidechain.address)
+    console.log(`New Data Union has ${formatEther(newDuTokenBalance)} DATA`)
+    const tokenDifference = oldDuTokenBalance.sub(newDuTokenBalance)
+    console.log(`Difference: ${formatEther(tokenDifference)}`)
+    // TODO: token difference might not be what should be migrated if the new also has had token flows that didn't go into the old
+    //       the only way to know is to run the thing, hence adding --skip-check
+
+    // TODO: public API endpoint, wouldn't need client at all
+    // [ { address, earnings, active } ]
+    const members = (await streamrFetch(client, `/dataunions/${oldDuAddress}/members`))
+        .filter((m) => m.active && (!whitelist || whitelist.has(m.address)))
+        .map((m) => ({
+            address: m.address,
+            earnings: BigNumber.from(m.earnings), // total earnings registered to the operator
+        }))
+    members.sort((m1, m2) => (m1.earnings.gt(m2.earnings) ? -1 : 1)) // from largest to smallest (1 and -1 inverted from "normal")
+
+    const isJoinPartAgent = await dataUnionSidechain.joinPartAgents(sidechainWallet.address)
+    if (options.skipJoins) {
+        debug('Skipping joins')
+    } else if (!isJoinPartAgent) {
+        console.log(`WARNING: ${sidechainWallet.address} is not a joinPartAgent in the DataUnionSidechain!\nThis means earnings are migrated but new members need to be added later.`)
+    } else {
+        const memberAddressList = members.map(m => m.address)
+        const initialMemberCount = memberAddressList.length
+        console.log(`Adding ${initialMemberCount} members, ${options.parallel} at a time`)
+        const addProgress = new CliProgress.SingleBar({ format: '{bar} Adding member {value} / {total} | ETA: {eta_formatted}' }, CliProgress.Presets.shades_grey)
+        addProgress.start(initialMemberCount, 0)
+
+        // filter from memberAddressList those memberToAdd who are not active members; trying to add an already-active member reverts the whole batch, should be avoided
+        while (memberAddressList.length > 0) {
+            const membersToAdd = []
+            while (membersToAdd.length < options.parallel && memberAddressList.length > 0) {
+                const membersToCheck = memberAddressList.splice(0, options.parallel)
+                addProgress.update(initialMemberCount - memberAddressList.length)
+                debug(`Checking membership of ${membersToCheck.join(', ')}`)
+                await Promise.all(membersToCheck.map(async address => {
+                    const memberData = await dataUnionSidechain.memberData(address).catch(() => [1]) // skip
+                    debug(`${address} state is ${['NONE', 'ACTIVE', 'INACTIVE'][memberData[0]]}`)
+                    if (memberData[0] !== 1) { // not ACTIVE  <=>  NONE or INACTIVE
+                        membersToAdd.push(address)
+                    }
+                }))
+            }
+
+            debug(`Adding ${membersToAdd.length} members`)
+            const tx = await dataUnionSidechain.addMembers(membersToAdd)
+            const tr = await tx.wait()
+            debug('Added members, receipt: %o', tr)
+        }
+    }
+
+    const totalOldEarnings = members.reduce((sum, m) => sum.add(m.earnings), BigNumber.from(0))
+    console.log(`Preparing to migrate ${members.length} (active) members in the old data union ${oldDuAddress}, total earnings ${formatEther(totalOldEarnings)} DATA`)
+    const tokensToDistribute = totalOldEarnings.div(testDivider)
+    console.log(`Distributing ${formatEther(tokensToDistribute)} DATA into the new Data Union (divider = ${testDivider}), minus rounding errors`)
+
     // check that the key controls enough sidechain tokens to do the migration
-    if (!options.dryRun) {
-        const sidechainTokenAddress = await dataUnionSidechain.token()
-        const sidechainToken = new Contract(sidechainTokenAddress, Token.abi, sidechainWallet)
-        debug('Sidechain token:', await sidechainToken.name(), sidechainToken.address)
+    if (!options.dryRun && !options.skipCheck) {
         const sidechainTokenBalance = await sidechainToken.balanceOf(wallet.address)
         console.log(`${wallet.address} has ${formatEther(sidechainTokenBalance)} sidechain DATA`)
 
@@ -225,7 +305,9 @@ async function start() {
     async function migrate(member) {
         if (!member.tokensToMigrate) {
             const withdrawn = await oldDataUnion.withdrawn(member.address)
-            const migratedEarnings = await dataUnionSidechain.getEarnings(member.address).catch(() => BigNumber.from(0))
+            const memberData = await dataUnionSidechain.memberData(member.address)
+            const isMember = memberData[0] > 0
+            const migratedEarnings = isMember ? await dataUnionSidechain.getEarnings(member.address) : 0
             // we know at this point that in one round, the same address shouldn't be processed twice, so there won't be a race for the tokensToMigrate attribute
             // eslint-disable-next-line require-atomic-updates, no-param-reassign
             member.tokensToMigrate = member.earnings.sub(withdrawn).div(testDivider).sub(migratedEarnings)
@@ -242,6 +324,7 @@ async function start() {
             debug('Transaction receipt', tr)
         }
         console.log(`Transferred to ${member.address}: ${formatEther(member.tokensToMigrate)} DATA`)
+        results.push(member)
 
         // eslint-disable-next-line require-atomic-updates, no-param-reassign
         member.tokensToMigrate = BigNumber.from(0)
@@ -259,7 +342,7 @@ async function start() {
         await Promise.all(membersToProcess.map(m => migrate(m).catch(console.error)))
 
         // migrate process sets the tokensToMigrate to zero when it finishes
-        const doneCount = membersToProcess.filter(m => m.tokensToMigrate.eq(0)).length
+        const doneCount = membersToProcess.filter(m => m.tokensToMigrate && m.tokensToMigrate.eq(0)).length
         progress.update(progress.value + doneCount, members[0])
 
         // sort between rounds => if (current) biggest earners have withdrawn tokens, they'll be bumped later in the queue
