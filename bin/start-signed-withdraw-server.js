@@ -71,9 +71,6 @@ if (ETHEREUM_SIDECHAIN) { serverStreamrOptions.sidechain = ETHEREUM_SIDECHAIN }
 consoleStamper(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
 function getStreamrClient() {
-    const withdrawOptions = {}
-    if (GAS_PRICE_GWEI) { withdrawOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
-
     const streamrOptions = {
         ...serverStreamrOptions,
         auth: { privateKey: SERVER_PRIVATE_KEY },
@@ -112,11 +109,11 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
 
     const client = getStreamrClient()
 
-    console.log(`Calling setBinanceDepositAddressFromSignature("${memberAddress}", "${recipientAddress}", "${signature}"`)
+    console.log(`Calling setBinanceDepositAddressFromSignature("${memberAddress}", "${binanceRecipientAddress}", "${signature}"`)
     
     client.setBinanceDepositAddressFromSignature(
         memberAddress,
-        recipientAddress,
+        binanceRecipientAddress,
         signature,
     ).then((tr) => {
         res.send({ transaction: tr.hash })
@@ -165,6 +162,8 @@ app.post('/', (req, res) => {
         res.send({ error: 'signature parameter not found or invalid signature' })
         return
     }
+    const withdrawOptions = {}
+    if (GAS_PRICE_GWEI) { withdrawOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
 
     const client = getStreamrClient()
 

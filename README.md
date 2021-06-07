@@ -87,6 +87,9 @@ Where the arguments are:
   * Write to the join/part stream of your data union (not required in `--dry-run` mode, as you're not really kicking anybody)
 
 ### Signed withdraw server
+```
+bin/start-signed-withdraw-server.js 
+```
 
 Opens a HTTP port and executes the signed withdrawals from given data unions. This way the data union member doesn't need to pay for the gas when the withdrawn tokens are transported to mainnet over the Asyncronous Message-passing Bridge (AMB).
 
