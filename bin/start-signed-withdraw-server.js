@@ -11,7 +11,8 @@ DATA_UNION_ADDRESS is the Ethereum address or comma-separated list of Ethereum a
 
 PORT is where the HTTP server listens for incoming connections (default: 3000)
 
-ETHEREUM_URL is the Ethereum (mainnet) node used for sending the transactions (default: ethers.js)
+ETHEREUM_MAINNET is the Ethereum (mainnet) node used for sending the transactions (default: ethers.js)
+ETHEREUM_SIDECHAIN is the sidechain url used to talk to the binance adapter
 `
 
 const { utils: { getAddress, isAddress, isHexString, parseUnits } } = require('ethers')
@@ -40,7 +41,7 @@ const {
     PAY_FOR_SIGNATURE_TRANSPORT, // default: yes
 
     STREAMR_NODE_ADDRESS,
-
+    BINANCE_ADAPTER,
     QUIET,
 } = process.env
 
@@ -66,11 +67,14 @@ if (STREAMR_HTTP_URL) { serverStreamrOptions.restUrl = STREAMR_HTTP_URL }
 if (PAY_FOR_SIGNATURE_TRANSPORT) { serverStreamrOptions.payForSignatureTransport = !!PAY_FOR_SIGNATURE_TRANSPORT }
 if (ETHEREUM_MAINNET) { serverStreamrOptions.mainnet = ETHEREUM_MAINNET }
 if (ETHEREUM_SIDECHAIN) { serverStreamrOptions.sidechain = ETHEREUM_SIDECHAIN }
+if (BINANCE_ADAPTER) { serverStreamrOptions.binanceAdapterAddress = BINANCE_ADAPTER }
+
+
 
 
 consoleStamper(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
-function getStreamrClient() {
+function getStreamrClient(dataUnion) {
     const streamrOptions = {
         ...serverStreamrOptions,
         auth: { privateKey: SERVER_PRIVATE_KEY },
@@ -97,7 +101,7 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
         return
     }
 
-    if (!isAddress(recipientAddress)) {
+    if (!isAddress(binanceRecipientAddress)) {
         res.send({ error: 'recipientAddress parameter not found or invalid Ethereum address' })
         return
     }
@@ -107,7 +111,7 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
         return
     }
 
-    const client = getStreamrClient()
+    const client = getStreamrClient({})
 
     console.log(`Calling setBinanceDepositAddressFromSignature("${memberAddress}", "${binanceRecipientAddress}", "${signature}"`)
     
@@ -165,7 +169,7 @@ app.post('/', (req, res) => {
     const withdrawOptions = {}
     if (GAS_PRICE_GWEI) { withdrawOptions.gasPrice = parseUnits(GAS_PRICE_GWEI, 'gwei') }
 
-    const client = getStreamrClient()
+    const client = getStreamrClient(dataUnion)
 
     console.log(`Calling withdrawToSigned("${memberAddress}", "${recipientAddress}", "${signature}", ${JSON.stringify(withdrawOptions)})`)
     client.withdrawToSigned(
