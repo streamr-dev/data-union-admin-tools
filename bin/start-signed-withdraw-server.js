@@ -120,7 +120,7 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
         binanceRecipientAddress,
         signature,
     ).then((tr) => {
-        res.send({ transaction: tr.hash })
+        res.send({ transaction: tr.transactionHash })
         return client.ensureDisconnected()
     }).catch((e) => {
         res.send({ error: e.message, stack: e.stack })
@@ -178,7 +178,7 @@ app.post('/', (req, res) => {
         signature,
         withdrawOptions
     ).then((tr) => {
-        res.send({ transaction: tr.hash })
+        res.send({ transaction: tr.transactionHash })
         return client.ensureDisconnected()
     }).catch((e) => {
         res.send({ error: e.message, stack: e.stack })
