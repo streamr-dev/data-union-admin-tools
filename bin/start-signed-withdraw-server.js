@@ -69,9 +69,6 @@ if (ETHEREUM_MAINNET) { serverStreamrOptions.mainnet = ETHEREUM_MAINNET }
 if (ETHEREUM_SIDECHAIN) { serverStreamrOptions.sidechain = ETHEREUM_SIDECHAIN }
 if (BINANCE_ADAPTER) { serverStreamrOptions.binanceAdapterAddress = BINANCE_ADAPTER }
 
-
-
-
 consoleStamper(console, { pattern: 'yyyy-mm-dd HH:MM:ss' })
 
 function getStreamrClient(dataUnion) {
@@ -80,7 +77,6 @@ function getStreamrClient(dataUnion) {
         auth: { privateKey: SERVER_PRIVATE_KEY },
         dataUnion,
     }
-    
     console.log(`Creating StreamrClient with ${JSON.stringify(streamrOptions)}`)
     return new StreamrClient(streamrOptions)
 }
@@ -112,9 +108,7 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
     }
 
     const client = getStreamrClient({})
-
     console.log(`Calling setBinanceDepositAddressFromSignature("${memberAddress}", "${binanceRecipientAddress}", "${signature}"`)
-    
     client.setBinanceDepositAddressFromSignature(
         memberAddress,
         binanceRecipientAddress,
@@ -125,7 +119,6 @@ app.post('/binanceAdapterSetRecipient', (req, res) => {
     }).catch((e) => {
         res.send({ error: e.message, stack: e.stack })
     })
-    
 })
 
 app.post('/', (req, res) => {

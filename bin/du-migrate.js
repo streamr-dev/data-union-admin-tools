@@ -67,7 +67,8 @@ const options = yargs.usage('Usage: $0 --old 0x... --key 0x... [-new 0x...] ...'
     })
     .option('new', {
         type: 'string',
-        describe: 'The address of the new data union smart contract to migrate to', //. If omitted, deploy a new DataUnionMainnet contract, see --factoryAddress option.',
+        describe: 'The address of the new data union smart contract to migrate to', // If omitted, deploy a new DataUnionMainnet contract, see --factoryAddress option.',
+
         demand: 'Must give new data union (Ethereum address) to migrate to'
     })
     .option('key', {
